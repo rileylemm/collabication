@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # Frontend Electron application (for development only)
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    volumes:
+      - ./frontend:/app/frontend
+      - node_modules:/app/node_modules
+    ports:
+      - 3000:3000
+    environment:
+      - NODE_ENV=development
+      - NPCSH_API_URL=http://npcsh-api:4000
+      - COLLAB_SERVER_URL=ws://collab-server:1234
+      - MONGO_URI=mongodb://mongodb:27017/collabication
+    depends_on:
+      - npcsh-api
+      - collab-server
+      - mongodb
+
+  # npcsh API adapter service
+  npcsh-api:
+    build:
+      context: .
+      dockerfile: docker/npcsh-api.Dockerfile
+    volumes:
+      - ./backend:/app/backend
+      - api_node_modules:/app/node_modules
+    ports:
+      - 4000:4000
+    environment:
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/collabication
+    depends_on:
+      - mongodb
+
+  # Collaboration server (Yjs)
+  collab-server:
+    build:
+      context: .
+      dockerfile: docker/collab-server.Dockerfile
+    volumes:
+      - ./backend:/app/backend
+      - collab_node_modules:/app/node_modules
+    ports:
+      - 1234:1234
+    environment:
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/collabication
+    depends_on:
+      - mongodb
+
+  # MongoDB database
+  mongodb:
+    image: mongo:6.0
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - 27017:27017
+    environment:
+      - MONGO_INITDB_DATABASE=collabication
+
+volumes:
+  node_modules:
+  api_node_modules:
+  collab_node_modules:
+  mongodb_data: 
