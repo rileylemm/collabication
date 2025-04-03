@@ -453,11 +453,6 @@ const EditorPage: React.FC = () => {
     setActiveTabId(newTabId);
   };
 
-  // Determine if the current file is a text file that supports rich text editing
-  const isTextFile = filename.endsWith('.md') || 
-                    filename.endsWith('.txt') || 
-                    filename.endsWith('.html');
-
   // Handler for undo action
   const handleUndo = () => {
     if (documentEditorRef.current) {
@@ -604,7 +599,7 @@ const EditorPage: React.FC = () => {
           showMinimap={showMinimap}
         />
       );
-    } else if (isTextFile(extension) || !extension) {
+    } else if (isTextFile(extension)) {
       return (
         <DocumentEditor 
           ref={documentEditorRef}

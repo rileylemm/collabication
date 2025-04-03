@@ -64,9 +64,10 @@ interface MinimapProps {
   code: string;
   language: 'javascript' | 'typescript' | 'python' | 'markdown';
   mainEditor: EditorView | null;
+  darkMode?: boolean;
 }
 
-const Minimap: React.FC<MinimapProps> = ({ code, language, mainEditor }) => {
+const Minimap: React.FC<MinimapProps> = ({ code, language, mainEditor, darkMode = false }) => {
   const minimapRef = useRef<HTMLDivElement>(null);
   const minimapViewRef = useRef<EditorView | null>(null);
   const highlightRef = useRef<HTMLDivElement>(null);

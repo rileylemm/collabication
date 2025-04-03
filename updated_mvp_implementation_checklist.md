@@ -133,7 +133,7 @@ Based on code review, the project has the following status:
 - [x] Implement code folding for code files
 - [x] Add line numbering and gutter indicators
 - [x] Create minimap for code navigation
-- [ ] Implement keyboard shortcuts for common operations
+- [x] Implement keyboard shortcuts for common operations
 - [x] Add support for themes (light/dark mode)
 
 ## Phase 4: Agent Integration
