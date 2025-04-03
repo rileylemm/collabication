@@ -1,6 +1,53 @@
 # Collabication
 
-An agent-native collaboration platform that seamlessly integrates humans and AI agents for knowledge work through a document-centric interface.
+An agent-native collaboration platform that seamlessly integrates humans and AI agents for knowledge work.
+
+## Project Status
+
+This project is currently in early MVP development. We are following a "vertical slice" approach to implementation, focusing on creating a minimal end-to-end flow before expanding features.
+
+### Current Implementation:
+
+- ✅ Basic project structure and configuration
+- ✅ React application setup with routing
+- ✅ Theme context with light/dark mode support
+- ✅ Layout component with header, sidebar, and content areas
+- ✅ Basic page components (Home, Editor, NotFound)
+- ✅ Initial Tiptap editor integration
+
+### Upcoming Development:
+
+- 🔄 Complete Tiptap editor with toolbar functionality
+- 🔄 File management system
+- 🔄 Backend API adapter for npcsh
+- 🔄 Real-time collaboration with Yjs
+- 🔄 GitHub integration with isomorphic-git
+
+## Development
+
+To start the development server:
+
+```bash
+npm install
+npm run dev
+```
+
+This will start both the React development server and Electron app.
+
+## Architecture
+
+Collabication uses a modern stack:
+
+- React for the frontend UI
+- Tiptap for rich text editing
+- CodeMirror for code editing
+- Electron for desktop application
+- Express for backend services
+- Socket.io and Yjs for real-time collaboration
+
+## Contributing
+
+This project is actively being developed. Follow the Implementation Checklist in the project documentation for guidance on what to work on next.
 
 ## Project Overview
 
@@ -41,15 +88,6 @@ Collabication combines document editing, agent assistance, GitHub integration, a
    docker-compose up -d
    npm run dev
    ```
-
-## Architecture
-
-Collabication uses a multi-container Docker Compose setup:
-
-- **Frontend Container**: Electron application with React
-- **npcsh API Container**: API adapter for agent capabilities
-- **Database Container**: MongoDB for document and metadata storage
-- **Collaboration Server Container**: Yjs server for real-time collaboration
 
 ## License
 
