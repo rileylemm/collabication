@@ -128,7 +128,7 @@ Based on code review, the project has the following status:
 - [x] Implement auto-save functionality
   - [x] Add debouncing for performance
   - [x] Create save indicators
-- [ ] Create undo/redo functionality
+- [x] Create undo/redo functionality
 - [ ] Add find and replace capabilities
 - [ ] Implement code folding for code files
 - [ ] Add line numbering and gutter indicators

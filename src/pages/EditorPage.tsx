@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { Editor as TiptapEditor } from '@tiptap/react';
-import DocumentEditor from '../components/DocumentEditor';
+import DocumentEditor, { DocumentEditorRef } from '../components/DocumentEditor';
 import FileBrowser from '../components/FileBrowser';
 import TabBar, { TabItem } from '../components/TabBar';
 import { Theme } from '../styles/theme';
@@ -220,6 +220,7 @@ const EditorPage: React.FC = () => {
   const [filename, setFilename] = useState('document.md');
   const [selectedFilePath, setSelectedFilePath] = useState('/Project/document.md');
   const editorRef = useRef<TiptapEditor | null>(null);
+  const documentEditorRef = useRef<DocumentEditorRef | null>(null);
   
   // Tab management state
   const [tabs, setTabs] = useState<TabItem[]>([
@@ -244,6 +245,9 @@ const EditorPage: React.FC = () => {
       isMarkdownMode: false
     }
   });
+  
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   
   // Update editor content when active tab changes
   useEffect(() => {
@@ -285,6 +289,11 @@ const EditorPage: React.FC = () => {
 
   const setEditor = (editor: TiptapEditor | null) => {
     editorRef.current = editor;
+  };
+
+  const setDocumentEditor = (editor: DocumentEditorRef) => {
+    documentEditorRef.current = editor;
+    updateUndoRedoState();
   };
 
   const handleBoldClick = () => {
@@ -425,6 +434,82 @@ const EditorPage: React.FC = () => {
                     filename.endsWith('.txt') || 
                     filename.endsWith('.html');
 
+  // Handler for undo action
+  const handleUndo = () => {
+    if (documentEditorRef.current) {
+      documentEditorRef.current.undo();
+      
+      // Update undo/redo state after operation
+      setTimeout(() => {
+        updateUndoRedoState();
+      }, 0);
+    }
+  };
+
+  // Handler for redo action
+  const handleRedo = () => {
+    if (documentEditorRef.current) {
+      documentEditorRef.current.redo();
+      
+      // Update undo/redo state after operation
+      setTimeout(() => {
+        updateUndoRedoState();
+      }, 0);
+    }
+  };
+
+  // Update the undo/redo state based on editor capabilities
+  const updateUndoRedoState = useCallback(() => {
+    if (documentEditorRef.current) {
+      setCanUndo(documentEditorRef.current.canUndo());
+      setCanRedo(documentEditorRef.current.canRedo());
+    }
+  }, []);
+
+  // Set up keyboard shortcut handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for undo: Ctrl+Z or Cmd+Z
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      
+      // Check for redo: Ctrl+Y or Cmd+Shift+Z
+      if (((e.ctrlKey || e.metaKey) && e.key === 'y') || 
+          ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    
+    // Add event listener
+    document.addEventListener('keydown', handleKeyDown);
+    
+    // Cleanup
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Update undo/redo state whenever editor changes
+  useEffect(() => {
+    if (editorRef.current) {
+      updateUndoRedoState();
+      
+      // Also update when the editor content changes
+      const updateListener = () => {
+        updateUndoRedoState();
+      };
+      
+      editorRef.current.on('transaction', updateListener);
+      
+      return () => {
+        editorRef.current?.off('transaction', updateListener);
+      };
+    }
+  }, [editorRef.current, updateUndoRedoState]);
+
   return (
     <PageContainer>
       <FileBrowser 
@@ -457,6 +542,24 @@ const EditorPage: React.FC = () => {
         </EditorHeader>
         
         <EditorToolbar>
+          {/* Undo/Redo buttons */}
+          <ToolbarButton 
+            onClick={handleUndo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+          >
+            ↩️
+          </ToolbarButton>
+          <ToolbarButton 
+            onClick={handleRedo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
+          >
+            ↪️
+          </ToolbarButton>
+          
+          <ToolbarSeparator />
+          
           <ToolbarButton 
             onClick={handleBoldClick}
             disabled={!isTextFile || isMarkdownMode}
@@ -527,10 +630,12 @@ const EditorPage: React.FC = () => {
         </EditorToolbar>
         
         <DocumentEditor 
+          ref={documentEditorRef}
           filename={filename}
           content={documentContent}
           onChange={setDocumentContent}
           onEditorReady={setEditor}
+          onDocumentEditorReady={setDocumentEditor}
           isMarkdownMode={isMarkdownMode}
         />
       </EditorContainer>
