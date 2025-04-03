@@ -130,9 +130,9 @@ Based on code review, the project has the following status:
   - [x] Create save indicators
 - [x] Create undo/redo functionality
 - [x] Add find and replace capabilities
-- [ ] Implement code folding for code files
+- [x] Implement code folding for code files
 - [x] Add line numbering and gutter indicators
-- [ ] Create minimap for code navigation
+- [x] Create minimap for code navigation
 - [ ] Implement keyboard shortcuts for common operations
 - [x] Add support for themes (light/dark mode)
 

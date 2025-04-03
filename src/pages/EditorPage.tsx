@@ -6,6 +6,10 @@ import FileBrowser from '../components/FileBrowser';
 import TabBar, { TabItem } from '../components/TabBar';
 import { Theme } from '../styles/theme';
 import { v4 as uuidv4 } from 'uuid';
+import CodeEditor from '../components/CodeEditor';
+import { CodeEditorRef } from '../components/CodeEditor';
+import SearchPanel from '../components/SearchPanel';
+import { getFileExtension, isTextFile, isCodeFile } from '../utils/fileUtils';
 
 // Extend the default theme
 declare module 'styled-components' {
@@ -36,6 +40,7 @@ const EditorContainer = styled.div`
   padding: 1rem;
   height: 100%;
   overflow-y: auto;
+  position: relative;
 `;
 
 const EditorHeader = styled.div`
@@ -43,6 +48,9 @@ const EditorHeader = styled.div`
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+  padding: 8px 16px;
+  background-color: ${props => props.theme.colors.background};
+  border-bottom: 1px solid ${props => props.theme.colors.border};
 `;
 
 const DocumentTitle = styled.input`
@@ -212,6 +220,14 @@ const sampleFiles: FileItem[] = [
   }
 ];
 
+// Add EditorContent styled component
+const EditorContent = styled.div`
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+`;
+
 const EditorPage: React.FC = () => {
   const [documentTitle, setDocumentTitle] = useState('Untitled Document');
   const [documentContent, setDocumentContent] = useState('<p>Start typing here...</p>');
@@ -248,6 +264,14 @@ const EditorPage: React.FC = () => {
   
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  
+  // Refs
+  const codeEditorRef = useRef<CodeEditorRef | null>(null);
+  
+  // Add state for minimap visibility
+  const [showMinimap, setShowMinimap] = useState(true);
   
   // Update editor content when active tab changes
   useEffect(() => {
@@ -510,6 +534,128 @@ const EditorPage: React.FC = () => {
     }
   }, [editorRef.current, updateUndoRedoState]);
 
+  // Toggle search panel
+  const toggleSearchPanel = useCallback(() => {
+    setShowSearchPanel(prev => !prev);
+    
+    // If opening the search panel and using CodeMirror, focus the editor's search
+    if (!showSearchPanel && codeEditorRef.current) {
+      setTimeout(() => {
+        codeEditorRef.current?.openSearch();
+      }, 0);
+    }
+  }, [showSearchPanel]);
+
+  // Keyboard shortcut handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+F or Cmd+F to toggle search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        toggleSearchPanel();
+      }
+      
+      // Ctrl+Z or Cmd+Z for undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      
+      // Ctrl+Shift+Z or Cmd+Shift+Z or Cmd+Y for redo
+      if (((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) || 
+          ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo, toggleSearchPanel]);
+
+  // Handle editor ready callback
+  const handleEditorReady = useCallback((ref: CodeEditorRef) => {
+    codeEditorRef.current = ref;
+    updateUndoRedoState();
+  }, [updateUndoRedoState]);
+  
+  // Determine which editor to render based on the file type
+  const renderEditor = () => {
+    if (!filename) return null;
+    
+    const extension = getFileExtension(filename);
+    
+    if (isCodeFile(extension)) {
+      let language: 'javascript' | 'typescript' | 'python' = 'javascript';
+      
+      if (extension === 'py') {
+        language = 'python';
+      } else if (extension === 'ts' || extension === 'tsx') {
+        language = 'typescript';
+      }
+      
+      return (
+        <CodeEditor 
+          code={documentContent}
+          language={language}
+          onChange={setDocumentContent}
+          ref={codeEditorRef}
+          onReady={handleEditorReady}
+          showMinimap={showMinimap}
+        />
+      );
+    } else if (isTextFile(extension) || !extension) {
+      return (
+        <DocumentEditor 
+          ref={documentEditorRef}
+          filename={filename}
+          content={documentContent}
+          onChange={setDocumentContent}
+          onEditorReady={setEditor}
+          onDocumentEditorReady={setDocumentEditor}
+          isMarkdownMode={isMarkdownMode}
+        />
+      );
+    }
+    
+    // Fallback to text editor for unsupported files
+    return (
+      <DocumentEditor 
+        ref={documentEditorRef}
+        filename={filename}
+        content={documentContent}
+        onChange={setDocumentContent}
+        onEditorReady={setEditor}
+        onDocumentEditorReady={setDocumentEditor}
+        isMarkdownMode={isMarkdownMode}
+      />
+    );
+  };
+  
+  // Fix for the search function to avoid Boolean call signature issue
+  const handleSearch = (query: string, caseSensitive: boolean, regex: boolean, wholeWord: boolean) => {
+    if (codeEditorRef.current) {
+      // For CodeMirror, we're using its built-in search panel via openSearch()
+      codeEditorRef.current.openSearch();
+    } else if (documentEditorRef.current) {
+      // For document editor, implement search if available
+      // Removing the find method call as it doesn't exist on DocumentEditorRef
+      console.log('Search in document editor:', query, { caseSensitive, regex, wholeWord });
+    }
+  };
+  
+  const handleCloseSearch = () => {
+    setShowSearchPanel(false);
+    if (codeEditorRef.current) {
+      codeEditorRef.current.closeSearch();
+    }
+  };
+
+  // Add a function to toggle minimap visibility
+  const toggleMinimap = () => {
+    setShowMinimap(!showMinimap);
+  };
+
   return (
     <PageContainer>
       <FileBrowser 
@@ -627,17 +773,68 @@ const EditorPage: React.FC = () => {
           >
             {isMarkdownMode ? 'Rich Text' : 'Markdown'}
           </ToolbarButton>
+          
+          <ToolbarSeparator />
+          
+          <ToolbarButton 
+            onClick={toggleSearchPanel}
+            title="Find (Ctrl+F)"
+          >
+            🔍 Find
+          </ToolbarButton>
+          
+          {/* Code Folding Buttons for code files */}
+          {isCodeFile(getFileExtension(filename)) && (
+            <>
+              <ToolbarSeparator />
+              <ToolbarButton 
+                onClick={() => codeEditorRef.current?.foldAll()}
+                title="Fold All (Ctrl+Alt+Shift+[)"
+              >
+                📃 Fold All
+              </ToolbarButton>
+              <ToolbarButton 
+                onClick={() => codeEditorRef.current?.unfoldAll()}
+                title="Unfold All (Ctrl+Alt+Shift+])"
+              >
+                📄 Unfold All
+              </ToolbarButton>
+              <ToolbarButton 
+                onClick={() => codeEditorRef.current?.foldSelection()}
+                title="Fold Selection (Ctrl+Alt+[)"
+              >
+                📑 Fold
+              </ToolbarButton>
+              <ToolbarButton 
+                onClick={() => codeEditorRef.current?.unfoldSelection()}
+                title="Unfold Selection (Ctrl+Alt+])"
+              >
+                📖 Unfold
+              </ToolbarButton>
+              <ToolbarSeparator />
+              <ToolbarButton 
+                onClick={toggleMinimap}
+                active={showMinimap}
+                title="Toggle Minimap"
+              >
+                🗺️ Minimap
+              </ToolbarButton>
+            </>
+          )}
         </EditorToolbar>
         
-        <DocumentEditor 
-          ref={documentEditorRef}
-          filename={filename}
-          content={documentContent}
-          onChange={setDocumentContent}
-          onEditorReady={setEditor}
-          onDocumentEditorReady={setDocumentEditor}
-          isMarkdownMode={isMarkdownMode}
-        />
+        <EditorContent>
+          {renderEditor()}
+          <SearchPanel 
+            isVisible={showSearchPanel}
+            onSearch={handleSearch}
+            onClose={handleCloseSearch}
+            onNext={codeEditorRef.current?.openSearch}
+            onPrevious={codeEditorRef.current?.openSearch}
+            onReplace={undefined}
+            onReplaceAll={undefined}
+          />
+        </EditorContent>
       </EditorContainer>
     </PageContainer>
   );
