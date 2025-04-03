@@ -1,16 +1,22 @@
-import React, { useEffect, useState, useRef, useImperativeHandle, forwardRef } from 'react';
-import { Editor as TiptapEditor } from '@tiptap/react';
+import React, { useEffect, useState, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
+import { Editor as TiptapEditor, useEditor, EditorContent } from '@tiptap/react';
 import styled from 'styled-components';
 import Editor from './Editor';
 import CodeEditor, { CodeEditorRef } from './CodeEditor';
 import { useTheme } from '../contexts/ThemeContext';
 import { getFileType, getCodeLanguage } from '../utils/fileUtils';
+import { useCollaboration } from '../contexts/CollaborationContext';
+import * as Y from 'yjs';
+import { getExtensions } from './DocumentEditorExtensions';
 
 // Export public interface for DocumentEditor
 export interface DocumentEditorRef {
+  setContent: (content: string) => void;
+  getContent: () => string;
+  getCharacterCount: () => number;
   focus: () => void;
-  undo: () => boolean;
-  redo: () => boolean;
+  undo: () => void;
+  redo: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
 }
@@ -22,12 +28,85 @@ interface DocumentEditorProps {
   onEditorReady?: (editor: TiptapEditor | null) => void;
   isMarkdownMode?: boolean;
   onDocumentEditorReady?: (ref: DocumentEditorRef) => void;
+  initialValue?: string;
+  placeholder?: string;
+  documentId?: string;
+  readOnly?: boolean;
+  onCanUndoChange?: (canUndo: boolean) => void;
+  onCanRedoChange?: (canRedo: boolean) => void;
+  darkMode?: boolean;
 }
 
-const EditorContainer = styled.div`
+const EditorContainer = styled.div<{ $darkMode: boolean }>`
+  position: relative;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  background-color: ${props => props.$darkMode ? props.theme.colors.surface : props.theme.colors.background};
+  color: ${props => props.theme.colors.text};
+  border-radius: 4px;
+  
+  .ProseMirror {
+    min-height: 100px;
+    padding: 16px;
+    outline: none;
+  }
+  
+  .ProseMirror p {
+    margin: 0.5em 0;
+  }
+  
+  .ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6 {
+    margin: 1em 0 0.5em;
+  }
+  
+  .ProseMirror code {
+    background-color: ${props => props.theme.colors.codeBackground};
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: monospace;
+  }
+  
+  .ProseMirror pre {
+    background-color: ${props => props.theme.colors.codeBackground};
+    padding: 0.75em 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+  }
+  
+  .ProseMirror pre code {
+    background: none;
+    padding: 0;
+  }
+  
+  .ProseMirror a {
+    color: ${props => props.theme.colors.primary};
+    text-decoration: underline;
+  }
+  
+  /* Styles for collaboration cursors */
+  .collaboration-cursor__caret {
+    position: relative;
+    border-left: 1px solid;
+    margin-left: -1px;
+    margin-right: -1px;
+    pointer-events: none;
+    word-break: normal;
+  }
+  
+  .collaboration-cursor__label {
+    position: absolute;
+    top: -1.4em;
+    left: -1px;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 600;
+    line-height: normal;
+    white-space: nowrap;
+    color: white;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px 3px 3px 0;
+    user-select: none;
+    pointer-events: none;
+  }
 `;
 
 const FileTypeIndicator = styled.div`
@@ -42,65 +121,186 @@ const FileTypeIndicator = styled.div`
   align-self: flex-end;
 `;
 
-const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>(({
-  filename,
-  content,
-  onChange,
-  onEditorReady,
-  isMarkdownMode = false,
-  onDocumentEditorReady
-}, ref) => {
+const CollaborationInfo = styled.div`
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+`;
+
+const UserBadge = styled.div`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+`;
+
+const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props, ref) => {
+  const {
+    filename,
+    content,
+    onChange,
+    onEditorReady,
+    isMarkdownMode = false,
+    onDocumentEditorReady,
+    initialValue = '<p>Start typing here...</p>',
+    placeholder = 'Start typing...',
+    documentId,
+    readOnly = false,
+    onCanUndoChange,
+    onCanRedoChange,
+    darkMode = false,
+  } = props;
+
   const { theme } = useTheme();
   const [editorType, setEditorType] = useState<'text' | 'code'>('text');
   const [language, setLanguage] = useState<string>('javascript');
   const codeEditorRef = useRef<CodeEditorRef | null>(null);
   const tiptapEditorRef = useRef<TiptapEditor | null>(null);
+  const [isCollaborating, setIsCollaborating] = useState(false);
   
-  // Expose methods to parent
-  useImperativeHandle(ref, () => ({
-    focus: () => {
-      if (editorType === 'code' && codeEditorRef.current) {
-        codeEditorRef.current.focus();
-      } else if (tiptapEditorRef.current) {
-        tiptapEditorRef.current.commands.focus();
+  // Get the collaboration context
+  const {
+    isConnected,
+    connectToDocument,
+    getYDoc,
+    updateUserInfo,
+    getYText,
+    connectedUsers
+  } = useCollaboration();
+
+  // Get the user information from localStorage
+  const getUserInfo = () => {
+    const savedUser = localStorage.getItem('collabication-user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        return {
+          name: parsed.name || 'Anonymous User',
+          color: parsed.color || '#' + Math.floor(Math.random() * 16777215).toString(16)
+        };
+      } catch (e) {
+        return {
+          name: 'Anonymous User',
+          color: '#' + Math.floor(Math.random() * 16777215).toString(16)
+        };
       }
-    },
-    undo: () => {
-      if (editorType === 'code' && codeEditorRef.current) {
-        return codeEditorRef.current.undo();
-      } else if (tiptapEditorRef.current) {
-        tiptapEditorRef.current.commands.undo();
-        return true;
-      }
-      return false;
-    },
-    redo: () => {
-      if (editorType === 'code' && codeEditorRef.current) {
-        return codeEditorRef.current.redo();
-      } else if (tiptapEditorRef.current) {
-        tiptapEditorRef.current.commands.redo();
-        return true;
-      }
-      return false;
-    },
-    canUndo: () => {
-      if (editorType === 'code' && codeEditorRef.current) {
-        return codeEditorRef.current.canUndo();
-      } else if (tiptapEditorRef.current) {
-        return tiptapEditorRef.current.can().undo();
-      }
-      return false;
-    },
-    canRedo: () => {
-      if (editorType === 'code' && codeEditorRef.current) {
-        return codeEditorRef.current.canRedo();
-      } else if (tiptapEditorRef.current) {
-        return tiptapEditorRef.current.can().redo();
-      }
-      return false;
     }
-  }));
-  
+    return {
+      name: 'Anonymous User',
+      color: '#' + Math.floor(Math.random() * 16777215).toString(16)
+    };
+  };
+
+  // Get or create the Yjs document
+  const getOrCreateYjsDoc = useCallback(() => {
+    if (!documentId) return null;
+    
+    try {
+      const doc = getYDoc(documentId);
+      const yText = doc.getText('content');
+      
+      // If the yText is empty and we have initial content, set it
+      if (yText.length === 0 && initialValue !== '<p>Start typing here...</p>') {
+        // We need to use the Yjs transaction API to modify the shared document
+        doc.transact(() => {
+          yText.insert(0, initialValue);
+        });
+      }
+      
+      return doc;
+    } catch (error) {
+      console.error('Error getting Yjs document:', error);
+      return null;
+    }
+  }, [documentId, getYDoc, initialValue]);
+
+  // Set up the editor with Yjs integration if needed
+  const editor = useEditor(
+    {
+      extensions: getExtensions({
+        placeholder,
+        yDoc: isConnected && documentId ? getOrCreateYjsDoc() : undefined,
+        user: isConnected ? getUserInfo() : undefined
+      }),
+      content: initialValue,
+      editable: !readOnly,
+      onUpdate: ({ editor }) => {
+        const html = editor.getHTML();
+        setContent(html);
+        onChange && onChange(html);
+      },
+      onTransaction: () => {
+        // Update undo/redo state
+        if (onCanUndoChange) {
+          onCanUndoChange(editor.can().undo());
+        }
+        if (onCanRedoChange) {
+          onCanRedoChange(editor.can().redo());
+        }
+      },
+    },
+    [isConnected, documentId, readOnly]
+  );
+
+  // Connect to the collaboration server when the component mounts
+  useEffect(() => {
+    if (documentId && editor && isConnected && !isCollaborating) {
+      const userInfo = getUserInfo();
+      
+      // Update user awareness information
+      updateUserInfo({
+        name: userInfo.name,
+        color: userInfo.color,
+        cursor: {
+          anchor: editor.state.selection.anchor,
+          head: editor.state.selection.head
+        }
+      });
+      
+      setIsCollaborating(true);
+    }
+  }, [documentId, editor, isConnected, isCollaborating, updateUserInfo]);
+
+  // Update user cursor position on selection change
+  useEffect(() => {
+    if (!editor || !isConnected || !documentId) return;
+    
+    const updateCursorPosition = () => {
+      updateUserInfo({
+        cursor: {
+          anchor: editor.state.selection.anchor,
+          head: editor.state.selection.head
+        }
+      });
+    };
+    
+    editor.on('selectionUpdate', updateCursorPosition);
+    
+    return () => {
+      editor.off('selectionUpdate', updateCursorPosition);
+    };
+  }, [editor, isConnected, documentId, updateUserInfo]);
+
+  // When switching between Markdown mode and rich text mode
+  useEffect(() => {
+    if (editor && isMarkdownMode) {
+      // Convert HTML to Markdown here (would require a library like turndown)
+      // This is a placeholder for the implementation
+      console.log('Switch to Markdown mode - not fully implemented');
+    } else if (editor && !isMarkdownMode) {
+      // Convert Markdown to HTML (would require a library like marked or markdown-it)
+      // This is a placeholder for the implementation
+      console.log('Switch to Rich Text mode - not fully implemented');
+    }
+  }, [editor, isMarkdownMode]);
+
   // Determine the editor type and language based on the file type
   useEffect(() => {
     const fileType = getFileType(filename);
@@ -130,6 +330,23 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>(({
   useEffect(() => {
     if (onDocumentEditorReady && (tiptapEditorRef.current || codeEditorRef.current)) {
       onDocumentEditorReady({
+        setContent: (newContent: string) => {
+          if (editor) {
+            editor.commands.setContent(newContent);
+          }
+        },
+        getContent: () => {
+          if (editor) {
+            return editor.getHTML();
+          }
+          return content;
+        },
+        getCharacterCount: () => {
+          if (editor) {
+            return editor.storage.characterCount.characters();
+          }
+          return 0;
+        },
         focus: () => {
           if (editorType === 'code' && codeEditorRef.current) {
             codeEditorRef.current.focus();
@@ -142,18 +359,14 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>(({
             return codeEditorRef.current.undo();
           } else if (tiptapEditorRef.current) {
             tiptapEditorRef.current.commands.undo();
-            return true;
           }
-          return false;
         },
         redo: () => {
           if (editorType === 'code' && codeEditorRef.current) {
             return codeEditorRef.current.redo();
           } else if (tiptapEditorRef.current) {
             tiptapEditorRef.current.commands.redo();
-            return true;
           }
-          return false;
         },
         canUndo: () => {
           if (editorType === 'code' && codeEditorRef.current) {
@@ -176,7 +389,7 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>(({
   }, [editorType, onDocumentEditorReady, tiptapEditorRef.current, codeEditorRef.current]);
 
   return (
-    <EditorContainer>
+    <EditorContainer $darkMode={darkMode}>
       <FileTypeIndicator>
         {editorType === 'text' ? 'Text Document' : `Code (${language})`}
       </FileTypeIndicator>
@@ -198,6 +411,19 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>(({
           darkMode={theme === 'dark'}
           onReady={handleCodeEditorReady}
         />
+      )}
+      {isConnected && connectedUsers.length > 0 && (
+        <CollaborationInfo>
+          {connectedUsers.map((user, index) => (
+            <UserBadge 
+              key={`${user.name}-${index}`}
+              style={{ backgroundColor: user.color }}
+              title={user.name}
+            >
+              {user.name.charAt(0)}
+            </UserBadge>
+          ))}
+        </CollaborationInfo>
       )}
     </EditorContainer>
   );
