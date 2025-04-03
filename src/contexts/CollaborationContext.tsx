@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import collaborationService, { UserAwarenessData } from '../services/collaborationService';
+import collaborationService, { UserAwarenessData, NetworkStatus } from '../services/collaborationService';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 
@@ -9,10 +9,12 @@ interface CollaborationContextType {
   isConnected: boolean;
   isConnecting: boolean;
   connectionError: string | null;
+  networkStatus: NetworkStatus;
   
   // Document info
   currentDocumentId: string | null;
   connectedUsers: UserAwarenessData[];
+  documentsWithOfflineChanges: string[];
   
   // Actions
   connectToDocument: (documentId: string, initialContent?: string) => Promise<void>;
@@ -21,6 +23,7 @@ interface CollaborationContextType {
   getYDoc: (documentId: string) => Y.Doc;
   getYText: (documentId: string) => Y.Text;
   updateDocumentMetadata: (metadata: Record<string, any>) => void;
+  getDocumentOfflineStatus: (documentId: string) => { hasPendingChanges: boolean, timestamp?: number };
 }
 
 // Default context value
@@ -28,14 +31,17 @@ const defaultContextValue: CollaborationContextType = {
   isConnected: false,
   isConnecting: false,
   connectionError: null,
+  networkStatus: 'online',
   currentDocumentId: null,
   connectedUsers: [],
+  documentsWithOfflineChanges: [],
   connectToDocument: async () => {},
   disconnectFromDocument: () => {},
   updateUserInfo: () => {},
   getYDoc: () => new Y.Doc(),
   getYText: () => new Y.Doc().getText('content'),
   updateDocumentMetadata: () => {},
+  getDocumentOfflineStatus: () => ({ hasPendingChanges: false }),
 };
 
 // Create the context
@@ -50,10 +56,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [networkStatus, setNetworkStatus] = useState<NetworkStatus>(
+    collaborationService.getNetworkStatus()
+  );
   
   // Document state
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<UserAwarenessData[]>([]);
+  const [documentsWithOfflineChanges, setDocumentsWithOfflineChanges] = useState<string[]>([]);
 
   // Refs to store provider information for cleanup
   const providerRef = useRef<WebsocketProvider | null>(null);
@@ -61,10 +71,12 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     onStatusChange: ((event: any) => void) | null;
     onConnectionError: ((error: Error) => void) | null;
     onAwarenessChange: (() => void) | null;
+    onNetworkStatusChange: ((status: NetworkStatus) => void) | null;
   }>({
     onStatusChange: null,
     onConnectionError: null,
     onAwarenessChange: null,
+    onNetworkStatusChange: null,
   });
 
   // Initialize the collaboration service
@@ -73,7 +85,42 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       serverUrl: process.env.REACT_APP_WS_SERVER_URL || 'wss://collabication-ws.example.com',
       roomPrefix: 'collabication-',
       localStorageId: 'collabication-user',
+      autoReconnect: true,
     });
+
+    // Set up network status change listener
+    const unregisterNetworkListener = collaborationService.onNetworkStatusChange((status) => {
+      console.log(`Network status updated in context: ${status}`);
+      setNetworkStatus(status);
+      
+      // Update the list of documents with offline changes
+      const docsWithChanges = collaborationService.getDocumentsWithOfflineChanges();
+      setDocumentsWithOfflineChanges(docsWithChanges);
+      
+      // Update connection state based on network status
+      if (status === 'online') {
+        // We might be reconnecting automatically, don't update isConnected yet
+        // The WebSocket provider will trigger a status change when connected
+      } else if (status === 'offline') {
+        setIsConnected(false);
+        setIsConnecting(false);
+      } else if (status === 'reconnecting') {
+        setIsConnected(false);
+        setIsConnecting(true);
+      }
+    });
+    
+    // Store the handler for cleanup
+    eventHandlersRef.current.onNetworkStatusChange = unregisterNetworkListener;
+    
+    // Initial check for offline changes
+    setDocumentsWithOfflineChanges(collaborationService.getDocumentsWithOfflineChanges());
+
+    return () => {
+      if (eventHandlersRef.current.onNetworkStatusChange) {
+        unregisterNetworkListener();
+      }
+    };
   }, []);
 
   // Function to set up event listeners
@@ -83,6 +130,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       if (event.status === 'connected') {
         setIsConnected(true);
         setIsConnecting(false);
+        setConnectionError(null);
       } else if (event.status === 'connecting') {
         setIsConnected(false);
         setIsConnecting(true);
@@ -96,6 +144,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       setConnectionError(error.message);
       setIsConnecting(false);
       setIsConnected(false);
+      
+      // Update offline changes list - the error might have triggered offline mode
+      setDocumentsWithOfflineChanges(collaborationService.getDocumentsWithOfflineChanges());
     };
     
     // Track connected users
@@ -121,6 +172,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     // Store references for cleanup
     providerRef.current = provider;
     eventHandlersRef.current = {
+      ...eventHandlersRef.current,
       onStatusChange,
       onConnectionError,
       onAwarenessChange,
@@ -149,9 +201,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       awareness.off('change', handlers.onAwarenessChange);
     }
     
-    // Reset refs
+    // Reset refs (except network status handler)
     providerRef.current = null;
     eventHandlersRef.current = {
+      ...eventHandlersRef.current,
       onStatusChange: null,
       onConnectionError: null,
       onAwarenessChange: null,
@@ -178,12 +231,17 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       
       // Set the current document ID
       setCurrentDocumentId(documentId);
+      
+      // Check if we have offline changes for this document
+      if (documentsWithOfflineChanges.includes(documentId)) {
+        console.log(`Document ${documentId} has offline changes that will be synced`);
+      }
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : String(error));
       setIsConnecting(false);
       setIsConnected(false);
     }
-  }, [cleanupEventListeners, setupEventListeners]);
+  }, [cleanupEventListeners, setupEventListeners, documentsWithOfflineChanges]);
 
   // Disconnect from the current document
   const disconnectFromDocument = useCallback(() => {
@@ -225,6 +283,28 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [currentDocumentId]);
 
+  // Get offline status for a document
+  const getDocumentOfflineStatus = useCallback((documentId: string) => {
+    return collaborationService.getDocumentOfflineStatus(documentId);
+  }, []);
+
+  // Update offline changes list periodically
+  useEffect(() => {
+    const checkOfflineChanges = () => {
+      const docs = collaborationService.getDocumentsWithOfflineChanges();
+      if (JSON.stringify(docs) !== JSON.stringify(documentsWithOfflineChanges)) {
+        setDocumentsWithOfflineChanges(docs);
+      }
+    };
+    
+    // Check every 5 seconds
+    const interval = setInterval(checkOfflineChanges, 5000);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [documentsWithOfflineChanges]);
+
   // Clean up when component unmounts
   useEffect(() => {
     return () => {
@@ -237,14 +317,17 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     isConnected,
     isConnecting,
     connectionError,
+    networkStatus,
     currentDocumentId,
     connectedUsers,
+    documentsWithOfflineChanges,
     connectToDocument,
     disconnectFromDocument,
     updateUserInfo,
     getYDoc,
     getYText,
     updateDocumentMetadata,
+    getDocumentOfflineStatus,
   };
 
   return (

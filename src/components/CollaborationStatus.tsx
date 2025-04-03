@@ -1,24 +1,103 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { useCollaboration } from '../contexts/CollaborationContext';
+import { FaWifi, FaExclamationTriangle, FaSync, FaArrowUp, FaUserFriends } from 'react-icons/fa';
+import { MdWifiOff } from 'react-icons/md';
+import { UserAwarenessData } from '../services/collaborationService';
+import collaborationService from '../services/collaborationService';
 
 interface CollaborationStatusProps {
   className?: string;
-  documentId?: string;
+  documentId: string;
 }
 
+const StatusContainer = styled.div`
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+  color: ${props => props.theme.colors.textSecondary};
+  margin-right: 1rem;
+  gap: 8px;
+`;
+
+const StatusIndicator = styled.div<{ status: 'online' | 'offline' | 'reconnecting' | 'error' | 'pendingChanges' }>`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: ${props => props.status === 'pendingChanges' ? 'pointer' : 'default'};
+  background-color: ${props => {
+    switch (props.status) {
+      case 'online':
+        return 'rgba(52, 199, 89, 0.2)';
+      case 'offline':
+        return 'rgba(142, 142, 147, 0.2)';
+      case 'reconnecting':
+        return 'rgba(255, 204, 0, 0.2)';
+      case 'error':
+        return 'rgba(255, 59, 48, 0.2)';
+      case 'pendingChanges':
+        return 'rgba(0, 122, 255, 0.2)';
+      default:
+        return 'transparent';
+    }
+  }};
+  color: ${props => {
+    switch (props.status) {
+      case 'online':
+        return 'rgb(52, 199, 89)';
+      case 'offline':
+        return 'rgb(142, 142, 147)';
+      case 'reconnecting':
+        return 'rgb(255, 204, 0)';
+      case 'error':
+        return 'rgb(255, 59, 48)';
+      case 'pendingChanges':
+        return 'rgb(0, 122, 255)';
+      default:
+        return props.theme.colors.textSecondary;
+    }
+  }};
+
+  &:hover {
+    opacity: ${props => props.status === 'pendingChanges' ? 0.8 : 1};
+  }
+`;
+
+const UsersCount = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  background-color: rgba(52, 199, 89, 0.1);
+  color: ${props => props.theme.colors.textSecondary};
+
+  &:hover {
+    background-color: rgba(52, 199, 89, 0.2);
+  }
+`;
+
 const CollaborationStatus: React.FC<CollaborationStatusProps> = ({ 
-  className, 
+  className,
   documentId 
 }) => {
-  const { 
-    isConnected, 
-    isConnecting, 
-    connectionError, 
-    connectedUsers, 
+  const {
+    isConnected,
+    isConnecting,
+    connectionError,
+    networkStatus,
+    connectedUsers,
+    documentsWithOfflineChanges,
+    getDocumentOfflineStatus,
     currentDocumentId,
     connectToDocument,
-    disconnectFromDocument
+    disconnectFromDocument,
+    updateUserInfo
   } = useCollaboration();
 
   const [userName, setUserName] = useState<string>(() => {
@@ -47,6 +126,47 @@ const CollaborationStatus: React.FC<CollaborationStatusProps> = ({
     return '#' + Math.floor(Math.random() * 16777215).toString(16);
   });
 
+  // Check if this document has offline changes
+  const offlineStatus = useMemo(() => {
+    return getDocumentOfflineStatus(documentId);
+  }, [documentId, getDocumentOfflineStatus, documentsWithOfflineChanges]);
+
+  // Get unique users (excluding current user)
+  const uniqueOtherUsers = useMemo(() => {
+    const userSet = new Set<string>();
+    const otherUsers: UserAwarenessData[] = [];
+    
+    connectedUsers.forEach(user => {
+      if (!userSet.has(user.id) && user.isCurrentUser !== true) {
+        userSet.add(user.id);
+        otherUsers.push(user);
+      }
+    });
+    
+    return otherUsers;
+  }, [connectedUsers]);
+
+  // Get status based on various factors
+  const getStatus = useMemo(() => {
+    if (connectionError) {
+      return { type: 'error' as const, message: 'Connection error' };
+    }
+    
+    if (networkStatus === 'offline') {
+      return { type: 'offline' as const, message: 'Offline' };
+    }
+    
+    if (isConnecting || networkStatus === 'reconnecting') {
+      return { type: 'reconnecting' as const, message: 'Reconnecting...' };
+    }
+    
+    if (isConnected) {
+      return { type: 'online' as const, message: 'Connected' };
+    }
+    
+    return { type: 'offline' as const, message: 'Disconnected' };
+  }, [isConnected, isConnecting, connectionError, networkStatus]);
+
   const handleConnect = async () => {
     if (!documentId) return;
     
@@ -72,13 +192,43 @@ const CollaborationStatus: React.FC<CollaborationStatusProps> = ({
     setUserColor(e.target.value);
   };
 
+  // Handle syncing when back online
+  const handleSyncClick = () => {
+    if (networkStatus === 'online' && offlineStatus.hasPendingChanges) {
+      collaborationService.syncOfflineChanges(documentId);
+    }
+  };
+
   return (
     <Container className={className}>
       <Title>Real-Time Collaboration</Title>
       
-      <StatusIndicator $isConnected={isConnected} $isConnecting={isConnecting}>
-        {isConnecting ? 'Connecting...' : isConnected ? 'Connected' : 'Disconnected'}
-      </StatusIndicator>
+      <StatusContainer>
+        {/* Connection status */}
+        <StatusIndicator status={getStatus.type}>
+          {getStatus.type === 'online' && <FaWifi />}
+          {getStatus.type === 'offline' && <MdWifiOff />}
+          {getStatus.type === 'reconnecting' && <FaSync className="rotating" />}
+          {getStatus.type === 'error' && <FaExclamationTriangle />}
+          <span>{getStatus.message}</span>
+        </StatusIndicator>
+        
+        {/* Pending changes indicator */}
+        {offlineStatus.hasPendingChanges && networkStatus === 'online' && (
+          <StatusIndicator status="pendingChanges" onClick={handleSyncClick}>
+            <FaArrowUp />
+            <span>Sync changes</span>
+          </StatusIndicator>
+        )}
+        
+        {/* Connected users count */}
+        {isConnected && uniqueOtherUsers.length > 0 && (
+          <UsersCount>
+            <FaUserFriends />
+            <span>{uniqueOtherUsers.length} {uniqueOtherUsers.length === 1 ? 'user' : 'users'}</span>
+          </UsersCount>
+        )}
+      </StatusContainer>
       
       {connectionError && (
         <ErrorMessage>{connectionError}</ErrorMessage>
@@ -147,20 +297,6 @@ const Title = styled.h3`
   margin: 0 0 16px 0;
   color: ${props => props.theme.colors.text};
   font-weight: 500;
-`;
-
-const StatusIndicator = styled.div<{ $isConnected: boolean; $isConnecting: boolean }>`
-  padding: 6px 12px;
-  border-radius: 16px;
-  font-size: 14px;
-  font-weight: 500;
-  display: inline-block;
-  margin-bottom: 16px;
-  color: white;
-  background-color: ${props => {
-    if (props.$isConnecting) return props.theme.colors.warning;
-    return props.$isConnected ? props.theme.colors.success : props.theme.colors.error;
-  }};
 `;
 
 const ErrorMessage = styled.div`
