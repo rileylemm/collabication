@@ -120,8 +120,8 @@ Based on code review, the project has the following status:
   - [x] Add file type detection based on extension and content
 - [x] Create syntax highlighting for Python, JavaScript, and other languages
 - [x] Implement Markdown/rich text toggle functionality
-- [ ] Add support for code blocks within Markdown/rich text
-- [ ] Create file browser component for project navigation
+- [x] Add support for code blocks within Markdown/rich text
+- [x] Create file browser component for project navigation
 - [ ] Implement tab management for multiple open files
 
 ### 6. Editor Features
