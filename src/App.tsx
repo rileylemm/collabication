@@ -9,6 +9,7 @@ import GlobalStyle from './styles/GlobalStyle';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import NotFoundPage from './pages/NotFoundPage';
+import AgentPage from './pages/AgentPage';
 
 // Import components
 import Layout from './components/Layout';
@@ -24,6 +25,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/editor/:documentId?" element={<EditorPage />} />
+          <Route path="/agent/:projectId?" element={<AgentPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Layout>

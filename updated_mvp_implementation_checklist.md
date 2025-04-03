@@ -138,41 +138,29 @@ Based on code review, the project has the following status:
 
 ## Phase 4: Agent Integration
 
-### 7. Agent UI Implementation
-- [ ] Create chat interface similar to Claude in Cursor
-  - [ ] Design and implement the chat UI components
-  - [ ] Add message history and scrolling
-- [ ] Implement streaming response rendering
-  - [ ] Add typing animation for responses
-  - [ ] Handle interruptions and updates
-- [ ] Add support for Markdown in agent responses
-- [ ] Create tool call visualization
-- [ ] Implement context selection mechanism
-  - [ ] Add file and folder selection
-  - [ ] Create context management UI
+### 7. Agent Integration
+#### Agent UI Implementation
+- [x] Create chat interface similar to Claude in Cursor
+- [x] Implement streaming response rendering
+- [x] Add support for Markdown in agent responses
+- [x] Create tool call visualization
+- [x] Implement context selection mechanism
 - [ ] Add support for file references in agent responses
 - [ ] Create agent settings and configuration UI
-- [ ] Implement agent memory and conversation history
 
-### 8. Agent Capabilities
-- [ ] Implement document drafting/editing assistance
-  - [ ] Create prompts for document assistance
-  - [ ] Add document templates and suggestions
-- [ ] Add code generation and explanation functionality
-  - [ ] Implement code generation with language-specific templates
-  - [ ] Add code explanation features
-- [ ] Create research assistance with MCP tools integration
-- [ ] Implement brainstorming facilitation features
-- [ ] Add template filling for various document types
-- [ ] Create project-wide context gathering mechanism
-  - [ ] Implement file indexing for context
-  - [ ] Add context management and prioritization
-- [ ] Implement agent command parsing and execution
-- [ ] Add support for agent-initiated actions
+#### Agent Capabilities
+- [ ] Document drafting/editing assistance
+- [ ] Code generation and explanation functionality
+- [ ] Research assistance with MCP tools integration
+- [ ] Brainstorming facilitation features
+- [ ] Template filling for various document types
+- [ ] Project-wide context gathering mechanism
+- [ ] Agent command parsing and execution
+- [ ] Support for agent-initiated actions
 
 ## Phase 5: GitHub Integration
 
-### 9. GitHub Authentication
+### 8. GitHub Authentication
 - [ ] Implement OAuth flow for GitHub authentication
   - [ ] Create the OAuth redirect handling
   - [ ] Add token exchange and validation
@@ -186,7 +174,7 @@ Based on code review, the project has the following status:
 - [ ] Implement token refresh mechanism
 - [ ] Create error handling for authentication failures
 
-### 10. GitHub Synchronization
+### 9. GitHub Synchronization
 - [ ] Integrate isomorphic-git for local Git operations
   - [ ] Set up the library and configuration
   - [ ] Create wrapper functions for common operations
@@ -206,7 +194,7 @@ Based on code review, the project has the following status:
 
 ## Phase 6: Real-time Collaboration
 
-### 11. Collaboration Server
+### 10. Collaboration Server
 - [ ] Set up Yjs server with WebSocket support
   - [ ] Configure the server with proper settings
   - [ ] Add connection handling and error recovery
@@ -219,7 +207,7 @@ Based on code review, the project has the following status:
 - [ ] Dockerize the collaboration server
   - [ ] Complete the collab-server.Dockerfile with proper configuration
 
-### 12. Client-side Collaboration
+### 11. Client-side Collaboration
 - [ ] Integrate Yjs client library
   - [ ] Set up the client library with proper configuration
   - [ ] Create connection management
@@ -235,7 +223,7 @@ Based on code review, the project has the following status:
 
 ## Phase 7: Integration and Refinement
 
-### 13. Feature Integration
+### 12. Feature Integration
 - [ ] Connect editor with agent capabilities
   - [ ] Add context sharing between editor and agent
   - [ ] Implement in-editor agent assistance
@@ -251,7 +239,7 @@ Based on code review, the project has the following status:
 - [ ] Implement unified search across all content
 - [ ] Create consistent keyboard shortcuts across features
 
-### 14. Deployment and Packaging
+### 13. Deployment and Packaging
 - [ ] Finalize Docker Compose configuration
   - [ ] Update service definitions with production settings
   - [ ] Add volume configurations for persistence
@@ -265,7 +253,7 @@ Based on code review, the project has the following status:
 
 ## Phase 8: Testing and Documentation
 
-### 15. Testing
+### 14. Testing
 - [ ] Write unit tests for core components
 - [ ] Implement integration tests for feature interactions
 - [ ] Create end-to-end tests for critical workflows
@@ -275,7 +263,7 @@ Based on code review, the project has the following status:
 - [ ] Add test coverage reporting
 - [ ] Implement visual regression testing
 
-### 16. Documentation
+### 15. Documentation
 - [x] Create user documentation with guides and tutorials
 - [ ] Write developer documentation for API and components
 - [ ] Add inline code documentation

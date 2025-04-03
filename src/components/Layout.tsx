@@ -2,6 +2,7 @@ import React, { ReactNode } from 'react';
 import styled from 'styled-components';
 import { useTheme } from '../contexts/ThemeContext';
 import { Theme } from '../styles/theme';
+import { Link, useLocation } from 'react-router-dom';
 
 interface LayoutProps {
   children: ReactNode;
@@ -63,7 +64,45 @@ const ThemeToggleButton = styled.button`
   }
 `;
 
+const Navigation = styled.nav`
+  padding: 1rem;
+`;
+
+const NavList = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 0;
+`;
+
+const NavItem = styled.li`
+  margin-bottom: 0.5rem;
+`;
+
+const NavLink = styled(Link)<{ $active?: boolean }>`
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  color: ${props => props.$active ? props.theme.colors.primary : props.theme.colors.text};
+  text-decoration: none;
+  border-radius: ${props => props.theme.borderRadius.small};
+  background-color: ${props => props.$active ? props.theme.colors.surfaceHighlight : 'transparent'};
+  
+  &:hover {
+    background-color: ${props => props.theme.colors.surfaceHighlight};
+  }
+`;
+
+const NavIcon = styled.span`
+  margin-right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+`;
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -76,8 +115,28 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </Header>
       <Main>
         <Sidebar>
-          {/* Sidebar content will be added later */}
-          <p>Sidebar placeholder</p>
+          <Navigation>
+            <NavList>
+              <NavItem>
+                <NavLink to="/" $active={location.pathname === '/'}>
+                  <NavIcon>🏠</NavIcon>
+                  Home
+                </NavLink>
+              </NavItem>
+              <NavItem>
+                <NavLink to="/editor" $active={location.pathname.startsWith('/editor')}>
+                  <NavIcon>📝</NavIcon>
+                  Editor
+                </NavLink>
+              </NavItem>
+              <NavItem>
+                <NavLink to="/agent" $active={location.pathname.startsWith('/agent')}>
+                  <NavIcon>🤖</NavIcon>
+                  Agent
+                </NavLink>
+              </NavItem>
+            </NavList>
+          </Navigation>
         </Sidebar>
         <Content>{children}</Content>
       </Main>

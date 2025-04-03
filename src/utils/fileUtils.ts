@@ -1,3 +1,5 @@
+import React from 'react';
+
 // File type definitions
 export type FileType = 'text' | 'code' | 'unknown';
 export type CodeLanguage = 'javascript' | 'typescript' | 'python' | 'html' | 'css' | 'json' | 'unknown';
@@ -85,4 +87,65 @@ export const createUniqueFileName = (baseName: string): string => {
   const extension = baseName.split('.').pop();
   const name = baseName.substring(0, baseName.lastIndexOf('.'));
   return `${name}_${timestamp}.${extension}`;
+};
+
+// Get file extension from filename
+export const getFileExtension = (filename: string): string => {
+  const parts = filename.split('.');
+  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+};
+
+// Check if file is a text file that should use the document editor
+export const isTextFile = (extension: string): boolean => {
+  const textExtensions = ['txt', 'md', 'markdown', 'rtf', 'html', 'htm'];
+  return textExtensions.includes(extension.toLowerCase());
+};
+
+// Check if file is a code file that should use the code editor
+export const isCodeFile = (extension: string): boolean => {
+  const codeExtensions = [
+    'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'cs', 
+    'php', 'rb', 'go', 'rs', 'swift', 'kt', 'scala', 'sh', 'bash',
+    'css', 'scss', 'less', 'json', 'yaml', 'yml', 'xml', 'sql'
+  ];
+  return codeExtensions.includes(extension.toLowerCase());
+};
+
+// Get content type based on file extension
+export const getContentType = (filename: string): 'code' | 'text' | 'binary' => {
+  const extension = getFileExtension(filename);
+  
+  if (isCodeFile(extension)) {
+    return 'code';
+  } else if (isTextFile(extension)) {
+    return 'text';
+  } else {
+    return 'binary';
+  }
+};
+
+// Determine icon to use for file based on extension
+export const getFileIcon = (filename: string): React.ReactNode => {
+  const extension = getFileExtension(filename);
+  
+  // You would implement icon selection logic here
+  // For now, return null as placeholder
+  return null;
+};
+
+// Get language from file extension for syntax highlighting
+export const getLanguageFromExtension = (
+  extension: string
+): 'javascript' | 'typescript' | 'python' | 'plain' => {
+  extension = extension.toLowerCase();
+  
+  if (extension === 'js' || extension === 'jsx') {
+    return 'javascript';
+  } else if (extension === 'ts' || extension === 'tsx') {
+    return 'typescript';
+  } else if (extension === 'py') {
+    return 'python';
+  } else {
+    return 'plain';
+  }
 }; 

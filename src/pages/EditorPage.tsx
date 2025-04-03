@@ -10,6 +10,7 @@ import CodeEditor from '../components/CodeEditor';
 import { CodeEditorRef } from '../components/CodeEditor';
 import SearchPanel from '../components/SearchPanel';
 import { getFileExtension, isTextFile, isCodeFile } from '../utils/fileUtils';
+import AgentContainer from '../components/AgentContainer';
 
 // Extend the default theme
 declare module 'styled-components' {
@@ -27,7 +28,7 @@ interface FileItem {
   isOpen?: boolean;
 }
 
-const PageContainer = styled.div`
+const PageContainer = styled.div<{ showAgentPanel: boolean }>`
   display: flex;
   height: calc(100vh - 60px);
   overflow: hidden;
@@ -228,6 +229,40 @@ const EditorContent = styled.div`
   height: 100%;
 `;
 
+// Add AgentPanel component
+const AgentPanel = styled.div<{ visible: boolean }>`
+  width: ${props => props.visible ? '350px' : '0'};
+  height: 100%;
+  overflow: hidden;
+  transition: width 0.3s ease;
+  border-left: ${props => props.visible ? `1px solid ${props.theme.colors.border}` : 'none'};
+`;
+
+// Add agent toggle button
+const AgentToggleButton = styled.button<{ showAgent: boolean }>`
+  position: fixed;
+  bottom: 1rem;
+  right: ${props => props.showAgent ? '360px' : '1rem'};
+  z-index: 10;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: ${props => props.theme.colors.primary};
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  transition: right 0.3s ease, background-color 0.2s ease;
+  
+  &:hover {
+    background-color: ${props => props.theme.colors.primaryDark};
+  }
+`;
+
 const EditorPage: React.FC = () => {
   const [documentTitle, setDocumentTitle] = useState('Untitled Document');
   const [documentContent, setDocumentContent] = useState('<p>Start typing here...</p>');
@@ -272,6 +307,9 @@ const EditorPage: React.FC = () => {
   
   // Add state for minimap visibility
   const [showMinimap, setShowMinimap] = useState(true);
+  
+  // Add state for agent panel
+  const [showAgentPanel, setShowAgentPanel] = useState(false);
   
   // Update editor content when active tab changes
   useEffect(() => {
@@ -651,8 +689,13 @@ const EditorPage: React.FC = () => {
     setShowMinimap(!showMinimap);
   };
 
+  // Toggle agent panel
+  const toggleAgentPanel = () => {
+    setShowAgentPanel(prev => !prev);
+  };
+
   return (
-    <PageContainer>
+    <PageContainer showAgentPanel={showAgentPanel}>
       <FileBrowser 
         files={sampleFiles}
         onFileSelect={handleFileSelect}
@@ -831,6 +874,31 @@ const EditorPage: React.FC = () => {
           />
         </EditorContent>
       </EditorContainer>
+      
+      {/* Agent panel */}
+      <AgentPanel visible={showAgentPanel}>
+        <AgentContainer 
+          files={sampleFiles}
+          currentFile={tabs.find(tab => tab.id === activeTabId) 
+            ? { 
+                id: activeTabId, 
+                name: filename, 
+                path: selectedFilePath, 
+                type: 'file', 
+                extension: getFileExtension(filename) 
+              } 
+            : undefined}
+        />
+      </AgentPanel>
+      
+      {/* Agent toggle button */}
+      <AgentToggleButton 
+        onClick={toggleAgentPanel}
+        showAgent={showAgentPanel}
+        title={showAgentPanel ? "Hide Agent" : "Show Agent"}
+      >
+        {showAgentPanel ? '👈' : '🤖'}
+      </AgentToggleButton>
     </PageContainer>
   );
 };

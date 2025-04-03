@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 // Theme types
-type ThemeType = 'light' | 'dark';
+export type ThemeType = 'light' | 'dark';
 
 // Context types
 interface ThemeContextType {

@@ -3,16 +3,26 @@
 // Common types for both themes
 interface ThemeColors {
   primary: string;
+  primaryDark: string;
   secondary: string;
   background: string;
   surface: string;
+  surfaceHighlight: string;
+  surfaceAlt: string;
   text: string;
   textSecondary: string;
+  textTertiary: string;
+  textOnPrimary: string;
   border: string;
   error: string;
   warning: string;
   success: string;
   info: string;
+  hoverBackground: string;
+  codeBackground: string;
+  toolCallBackground: string;
+  inputBackground: string;
+  disabledBackground: string;
 }
 
 // The complete theme type
@@ -52,16 +62,26 @@ export const lightTheme: Theme = {
   name: 'light',
   colors: {
     primary: '#4361ee',
+    primaryDark: '#3050dd',
     secondary: '#3f37c9',
     background: '#ffffff',
     surface: '#f5f7fa',
+    surfaceHighlight: '#f0f7ff',
+    surfaceAlt: '#f0f0f0',
     text: '#1a1a1a',
     textSecondary: '#4e4e4e',
+    textTertiary: '#767676',
+    textOnPrimary: '#ffffff',
     border: '#e0e0e0',
     error: '#d90429',
     warning: '#ff9900',
     success: '#06d6a0',
     info: '#118ab2',
+    hoverBackground: '#f0f0f0',
+    codeBackground: '#f5f5f5',
+    toolCallBackground: '#eef5ff',
+    inputBackground: '#ffffff',
+    disabledBackground: '#e0e0e0',
   },
   fontSizes: {
     small: '0.875rem',
@@ -96,16 +116,26 @@ export const darkTheme: Theme = {
   name: 'dark',
   colors: {
     primary: '#4cc9f0',
+    primaryDark: '#25b8e0',
     secondary: '#7209b7',
     background: '#1a1a1a',
     surface: '#2d2d2d',
+    surfaceHighlight: '#333c45',
+    surfaceAlt: '#252525',
     text: '#f5f5f5',
     textSecondary: '#b0b0b0',
+    textTertiary: '#888888',
+    textOnPrimary: '#000000',
     border: '#444444',
     error: '#ef476f',
     warning: '#ffd166',
     success: '#06d6a0',
     info: '#118ab2',
+    hoverBackground: '#333333',
+    codeBackground: '#252525',
+    toolCallBackground: '#2a3440',
+    inputBackground: '#232323',
+    disabledBackground: '#444444',
   },
   fontSizes: {
     small: '0.875rem',
