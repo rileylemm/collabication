@@ -1,9 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { Editor as TiptapEditor } from '@tiptap/react';
 import DocumentEditor from '../components/DocumentEditor';
 import FileBrowser from '../components/FileBrowser';
+import TabBar, { TabItem } from '../components/TabBar';
 import { Theme } from '../styles/theme';
+import { v4 as uuidv4 } from 'uuid';
 
 // Extend the default theme
 declare module 'styled-components' {
@@ -63,7 +65,7 @@ const EditorToolbar = styled.div`
   margin-bottom: 1rem;
   padding: 0.5rem;
   border-radius: ${props => props.theme.borderRadius.small};
-  background-color: ${props => props.theme.colors.backgroundAlt};
+  background-color: ${props => props.theme.colors.surface};
 `;
 
 const ToolbarButton = styled.button<{ active?: boolean }>`
@@ -76,7 +78,7 @@ const ToolbarButton = styled.button<{ active?: boolean }>`
   font-weight: ${props => props.active ? 'bold' : 'normal'};
   
   &:hover {
-    background-color: ${props => props.theme.colors.backgroundHover};
+    background-color: rgba(0, 0, 0, 0.05);
   }
 
   &:disabled {
@@ -134,7 +136,7 @@ const DropdownItem = styled.a`
   font-size: 0.9rem;
   
   &:hover {
-    background-color: ${props => props.theme.colors.backgroundHover};
+    background-color: rgba(0, 0, 0, 0.05);
   }
 `;
 
@@ -218,6 +220,68 @@ const EditorPage: React.FC = () => {
   const [filename, setFilename] = useState('document.md');
   const [selectedFilePath, setSelectedFilePath] = useState('/Project/document.md');
   const editorRef = useRef<TiptapEditor | null>(null);
+  
+  // Tab management state
+  const [tabs, setTabs] = useState<TabItem[]>([
+    {
+      id: 'default-tab',
+      path: '/Project/document.md',
+      name: 'document.md',
+      isDirty: false
+    }
+  ]);
+  const [activeTabId, setActiveTabId] = useState('default-tab');
+  
+  // Map to store file content for each tab
+  const [fileContents, setFileContents] = useState<Record<string, { 
+    content: string;
+    isDirty: boolean;
+    isMarkdownMode: boolean;
+  }>>({
+    'default-tab': {
+      content: '<p>Start typing here...</p>',
+      isDirty: false,
+      isMarkdownMode: false
+    }
+  });
+  
+  // Update editor content when active tab changes
+  useEffect(() => {
+    const activeFile = fileContents[activeTabId];
+    if (activeFile) {
+      setDocumentContent(activeFile.content);
+      setIsMarkdownMode(activeFile.isMarkdownMode);
+      
+      const activeTab = tabs.find(tab => tab.id === activeTabId);
+      if (activeTab) {
+        setFilename(activeTab.name);
+        setSelectedFilePath(activeTab.path);
+        setDocumentTitle(activeTab.name.split('.')[0]);
+      }
+    }
+  }, [activeTabId]);
+
+  // Update tab and file content when document changes
+  useEffect(() => {
+    // Skip initial render
+    if (documentContent === '<p>Start typing here...</p>') return;
+    
+    setFileContents(prev => ({
+      ...prev,
+      [activeTabId]: {
+        ...prev[activeTabId],
+        content: documentContent,
+        isDirty: true,
+        isMarkdownMode
+      }
+    }));
+    
+    setTabs(prev => prev.map(tab => 
+      tab.id === activeTabId 
+        ? { ...tab, isDirty: true } 
+        : tab
+    ));
+  }, [documentContent, isMarkdownMode]);
 
   const setEditor = (editor: TiptapEditor | null) => {
     editorRef.current = editor;
@@ -273,25 +337,87 @@ const EditorPage: React.FC = () => {
     }
   };
 
+  const handleTabSelect = (tabId: string) => {
+    // Save current tab content
+    setFileContents(prev => ({
+      ...prev,
+      [activeTabId]: {
+        ...prev[activeTabId],
+        content: documentContent,
+        isMarkdownMode
+      }
+    }));
+    
+    // Switch to selected tab
+    setActiveTabId(tabId);
+  };
+
+  const handleTabClose = (tabId: string) => {
+    // Prevent closing the last tab
+    if (tabs.length === 1) return;
+    
+    // Switch to another tab if closing the active one
+    if (tabId === activeTabId) {
+      const index = tabs.findIndex(tab => tab.id === tabId);
+      const newIndex = index === 0 ? 1 : index - 1;
+      setActiveTabId(tabs[newIndex].id);
+    }
+    
+    // Remove the tab and its content
+    setTabs(prev => prev.filter(tab => tab.id !== tabId));
+    setFileContents(prev => {
+      const newContents = { ...prev };
+      delete newContents[tabId];
+      return newContents;
+    });
+  };
+
   const handleFileSelect = (file: FileItem) => {
     if (file.type !== 'file') return;
     
-    setSelectedFilePath(file.path);
-    setFilename(file.name);
-    setDocumentTitle(file.name.split('.')[0]);
+    // Check if file is already open in a tab
+    const existingTab = tabs.find(tab => tab.path === file.path);
     
-    // In a real app, you would load the file content here
-    // For demo purposes, we're just setting some placeholder content
-    if (file.name.endsWith('.md')) {
-      setDocumentContent('<p>Content of ' + file.name + '</p>');
-      setIsMarkdownMode(false);
-    } else if (file.name.endsWith('.ts') || file.name.endsWith('.tsx')) {
-      setDocumentContent('<p>TypeScript content here</p>');
-      setIsMarkdownMode(true);
-    } else if (file.name.endsWith('.css')) {
-      setDocumentContent('<p>CSS content here</p>');
-      setIsMarkdownMode(true);
+    if (existingTab) {
+      // Switch to existing tab
+      setActiveTabId(existingTab.id);
+      return;
     }
+    
+    // Create a new tab
+    const newTabId = uuidv4();
+    const extension = file.name.split('.').pop() || '';
+    
+    // Generate sample content based on file type
+    let newContent = '<p>Content of ' + file.name + '</p>';
+    let newIsMarkdownMode = false;
+    
+    if (extension === 'ts' || extension === 'tsx' || extension === 'js' || extension === 'jsx' || extension === 'css') {
+      newContent = '<p>// Code content for ' + file.name + '</p>';
+      newIsMarkdownMode = true;
+    }
+    
+    // Add new tab
+    setTabs(prev => [...prev, {
+      id: newTabId,
+      path: file.path,
+      name: file.name,
+      isDirty: false,
+      extension
+    }]);
+    
+    // Add file content
+    setFileContents(prev => ({
+      ...prev,
+      [newTabId]: {
+        content: newContent,
+        isDirty: false,
+        isMarkdownMode: newIsMarkdownMode
+      }
+    }));
+    
+    // Switch to new tab
+    setActiveTabId(newTabId);
   };
 
   // Determine if the current file is a text file that supports rich text editing
@@ -308,6 +434,13 @@ const EditorPage: React.FC = () => {
       />
       
       <EditorContainer>
+        <TabBar 
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onTabSelect={handleTabSelect}
+          onTabClose={handleTabClose}
+        />
+        
         <EditorHeader>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <DocumentTitle 

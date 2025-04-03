@@ -39,6 +39,7 @@
     "@tiptap/extension-underline": "^2.11.7",
     "@tiptap/react": "^2.0.0-beta.220",
     "@tiptap/starter-kit": "^2.0.0-beta.220",
+    "@types/uuid": "^10.0.0",
     "codemirror": "^6.0.1",
     "electron-squirrel-startup": "^1.0.0",
     "electron-store": "^8.1.0",
@@ -55,6 +56,7 @@
     "socket.io-client": "^4.7.0",
     "styled-components": "^6.0.0-rc.3",
     "tiptap-markdown": "^0.8.10",
+    "uuid": "^11.1.0",
     "y-websocket": "^1.5.0",
     "yjs": "^13.6.4"
   },
