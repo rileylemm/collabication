@@ -35,11 +35,42 @@ Based on code review, the project has the following status:
 - ❌ No implementation of real-time collaboration client
 
 ## Implementation Priorities
-1. Complete the backend API adapter for npcsh
-2. Implement the editor components (Tiptap and CodeMirror)
-3. Create the agent UI and integration
-4. Add GitHub authentication and synchronization
-5. Implement client-side real-time collaboration
+
+1. **Core Document Editing**
+   - [X] Document editor with rich text features
+   - [X] Support for code editing with syntax highlighting
+   - [X] File browser and management
+   - [X] File operations (create, read, update, delete)
+   - [X] Search functionality
+   - [X] Tab-based interface
+
+2. **Agent**
+   - [X] Panel for agent interactions
+   - [X] Agent service for handling requests
+   - [X] Context-aware suggestions and assistance
+   - [X] Toggle for showing/hiding agent panel
+   - [X] Integration with editor context
+   - [X] Task list and conversation history
+
+3. **GitHub Integration**
+   - [X] Authentication with GitHub
+   - [X] Repository listing and management
+   - [X] Clone repositories
+   - [ ] Push/pull changes
+   - [ ] Commit history
+   - [ ] Branch management
+   - [ ] File status indicators
+
+4. **Real-time Collaboration**
+   - [X] WebSocket server setup with Yjs backend
+   - [X] Document synchronization between clients
+   - [X] Presence indicators (who is editing)
+   - [X] Cursor tracking
+   - [X] User identification
+   - [X] Document permissions model (view, edit, comment)
+   - [X] UI for managing permissions
+   - [ ] Offline editing with synchronization on reconnect
+   - [ ] Resolving conflicts
 
 ## Phase 1: Project Setup and Configuration
 
