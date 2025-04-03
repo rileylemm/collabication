@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import styled from 'styled-components';
 import { Editor as TiptapEditor } from '@tiptap/react';
-import Editor from '../components/Editor';
+import DocumentEditor from '../components/DocumentEditor';
 
 const EditorContainer = styled.div`
   display: flex;
@@ -70,11 +70,27 @@ const ToolbarSeparator = styled.div`
   margin: 0 0.5rem;
 `;
 
+const FileNameInput = styled.input`
+  border: none;
+  border-bottom: 1px solid ${props => props.theme.colors.border};
+  outline: none;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  color: ${props => props.theme.colors.text};
+  font-size: 0.9rem;
+  margin-right: 1rem;
+  
+  &:focus {
+    border-bottom: 1px solid ${props => props.theme.colors.primary};
+  }
+`;
+
 const EditorPage: React.FC = () => {
   const [documentTitle, setDocumentTitle] = useState('Untitled Document');
   const [documentContent, setDocumentContent] = useState('<p>Start typing here...</p>');
   const [markdownContent, setMarkdownContent] = useState('Start typing here...');
   const [isMarkdownMode, setIsMarkdownMode] = useState(false);
+  const [filename, setFilename] = useState('document.md');
   const editorRef = useRef<TiptapEditor | null>(null);
 
   const setEditor = (editor: TiptapEditor | null) => {
@@ -118,48 +134,60 @@ const EditorPage: React.FC = () => {
     setIsMarkdownMode(!isMarkdownMode);
   };
 
+  // Determine if the current file is a text file that supports rich text editing
+  const isTextFile = filename.endsWith('.md') || 
+                    filename.endsWith('.txt') || 
+                    filename.endsWith('.html');
+
   return (
     <EditorContainer>
       <EditorHeader>
-        <DocumentTitle 
-          value={documentTitle}
-          onChange={(e) => setDocumentTitle(e.target.value)}
-          placeholder="Document Title"
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <DocumentTitle 
+            value={documentTitle}
+            onChange={(e) => setDocumentTitle(e.target.value)}
+            placeholder="Document Title"
+          />
+          <FileNameInput
+            value={filename}
+            onChange={(e) => setFilename(e.target.value)}
+            placeholder="filename.extension"
+          />
+        </div>
       </EditorHeader>
       
       <EditorToolbar>
         <ToolbarButton 
           onClick={handleBoldClick}
-          disabled={isMarkdownMode}
+          disabled={!isTextFile || isMarkdownMode}
           active={editorRef.current?.isActive('bold')}
         >
           Bold
         </ToolbarButton>
         <ToolbarButton 
           onClick={handleItalicClick}
-          disabled={isMarkdownMode}
+          disabled={!isTextFile || isMarkdownMode}
           active={editorRef.current?.isActive('italic')}
         >
           Italic
         </ToolbarButton>
         <ToolbarButton 
           onClick={handleUnderlineClick}
-          disabled={isMarkdownMode}
+          disabled={!isTextFile || isMarkdownMode}
           active={editorRef.current?.isActive('underline')}
         >
           Underline
         </ToolbarButton>
         <ToolbarButton 
           onClick={handleCodeClick}
-          disabled={isMarkdownMode}
+          disabled={!isTextFile || isMarkdownMode}
           active={editorRef.current?.isActive('code')}
         >
           Code
         </ToolbarButton>
         <ToolbarButton 
           onClick={handleLinkClick}
-          disabled={isMarkdownMode}
+          disabled={!isTextFile || isMarkdownMode}
           active={editorRef.current?.isActive('link')}
         >
           Link
@@ -170,18 +198,18 @@ const EditorPage: React.FC = () => {
         <ToolbarButton 
           onClick={handleToggleMarkdownMode}
           active={isMarkdownMode}
+          disabled={!isTextFile}
         >
           {isMarkdownMode ? 'Rich Text' : 'Markdown'}
         </ToolbarButton>
       </EditorToolbar>
       
-      <Editor 
+      <DocumentEditor 
+        filename={filename}
         content={documentContent}
         onChange={setDocumentContent}
-        onChangeMarkdown={setMarkdownContent}
-        isMarkdownMode={isMarkdownMode}
-        placeholder="Start typing here..."
         onEditorReady={setEditor}
+        isMarkdownMode={isMarkdownMode}
       />
     </EditorContainer>
   );

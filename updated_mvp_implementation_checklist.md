@@ -111,14 +111,14 @@ Based on code review, the project has the following status:
   - [x] Set up the Tiptap editor with basic extensions
   - [x] Configure Markdown support
   - [x] Add custom extensions for specific features
-- [ ] Set up CodeMirror or Monaco Editor for code editing
-  - [ ] Configure the code editor with basic features
-  - [ ] Add language support for common programming languages
-  - [ ] Implement editor configuration options
-- [ ] Implement file type detection and appropriate editor loading
-  - [ ] Create a factory pattern for editor selection
-  - [ ] Add file type detection based on extension and content
-- [ ] Create syntax highlighting for Python, JavaScript, and other languages
+- [x] Set up CodeMirror or Monaco Editor for code editing
+  - [x] Configure the code editor with basic features
+  - [x] Add language support for common programming languages
+  - [x] Implement editor configuration options
+- [x] Implement file type detection and appropriate editor loading
+  - [x] Create a factory pattern for editor selection
+  - [x] Add file type detection based on extension and content
+- [x] Create syntax highlighting for Python, JavaScript, and other languages
 - [x] Implement Markdown/rich text toggle functionality
 - [ ] Add support for code blocks within Markdown/rich text
 - [ ] Create file browser component for project navigation
