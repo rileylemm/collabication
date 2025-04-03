@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { Editor as TiptapEditor } from '@tiptap/react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import DocumentEditor, { DocumentEditorRef } from '../components/DocumentEditor';
 import FileBrowser from '../components/FileBrowser';
 import TabBar, { TabItem } from '../components/TabBar';
@@ -11,6 +12,13 @@ import { CodeEditorRef } from '../components/CodeEditor';
 import SearchPanel from '../components/SearchPanel';
 import { getFileExtension, isTextFile, isCodeFile } from '../utils/fileUtils';
 import AgentContainer from '../components/AgentContainer';
+import { useGitHub } from '../contexts/GitHubContext';
+import { githubService, FileStatus } from '../services/githubService';
+import CollaborationStatus from '../components/CollaborationStatus';
+import CollaborationUsersList from '../components/CollaborationUsersList';
+import { CollaborationProvider } from '../contexts/CollaborationContext';
+import { BiNetworkChart, BiX, BiUserCheck } from 'react-icons/bi';
+import PermissionsPanel from '../components/PermissionsPanel';
 
 // Extend the default theme
 declare module 'styled-components' {
@@ -26,6 +34,7 @@ interface FileItem {
   extension?: string;
   children?: FileItem[];
   isOpen?: boolean;
+  status?: FileStatus; // Add Git status field
 }
 
 const PageContainer = styled.div<{ showAgentPanel: boolean }>`
@@ -263,6 +272,121 @@ const AgentToggleButton = styled.button<{ showAgent: boolean }>`
   }
 `;
 
+// Add Git status indicator component
+const GitStatusIndicator = styled.span<{ status: FileStatus }>`
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+  background-color: ${props => {
+    switch (props.status) {
+      case 'added':
+        return props.theme.colors.success;
+      case 'modified':
+        return props.theme.colors.warning;
+      case 'deleted':
+        return props.theme.colors.error;
+      default:
+        return 'transparent';
+    }
+  }};
+`;
+
+// Add Git operations toolbar
+const GitToolbar = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background-color: ${props => props.theme.colors.surface};
+  border-bottom: 1px solid ${props => props.theme.colors.border};
+  margin-bottom: 0.5rem;
+`;
+
+const GitStatusBadge = styled.div<{ count: number }>`
+  display: ${props => props.count > 0 ? 'flex' : 'none'};
+  align-items: center;
+  justify-content: center;
+  background-color: ${props => props.theme.colors.warning};
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 0.7rem;
+  margin-left: 5px;
+`;
+
+const CollaborationSidebar = styled.div<{ $isOpen: boolean }>`
+  position: fixed;
+  top: 60px; /* Adjust based on header height */
+  right: 0;
+  width: 320px;
+  height: calc(100vh - 60px);
+  background-color: ${props => props.theme.colors.background};
+  box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  transform: translateX(${props => (props.$isOpen ? '0' : '100%')});
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+`;
+
+const SidebarHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid ${props => props.theme.colors.border};
+  
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+    color: ${props => props.theme.colors.text};
+  }
+`;
+
+const CloseButton = styled.button`
+  background: none;
+  border: none;
+  color: ${props => props.theme.colors.textSecondary};
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    color: ${props => props.theme.colors.text};
+  }
+`;
+
+const CollaborationPanels = styled.div`
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+`;
+
+const PermissionsButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background-color: ${props => props.theme.colors.primary};
+  color: white;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  
+  &:hover {
+    opacity: 0.9;
+  }
+`;
+
 const EditorPage: React.FC = () => {
   const [documentTitle, setDocumentTitle] = useState('Untitled Document');
   const [documentContent, setDocumentContent] = useState('<p>Start typing here...</p>');
@@ -311,22 +435,122 @@ const EditorPage: React.FC = () => {
   // Add state for agent panel
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   
-  // Update editor content when active tab changes
+  // Add GitHub related state
+  const [repoName, setRepoName] = useState<string | null>(null);
+  const [gitFiles, setGitFiles] = useState<FileItem[]>([]);
+  const [isGitRepo, setIsGitRepo] = useState(false);
+  const [modifiedFiles, setModifiedFiles] = useState<FileStatus[]>([]);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const [isPulling, setIsPulling] = useState(false);
+  
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { token, user } = useGitHub();
+  
+  // Parse query params for repository
   useEffect(() => {
-    const activeFile = fileContents[activeTabId];
-    if (activeFile) {
-      setDocumentContent(activeFile.content);
-      setIsMarkdownMode(activeFile.isMarkdownMode);
+    const query = new URLSearchParams(location.search);
+    const repo = query.get('repo');
+    
+    if (repo) {
+      setRepoName(repo);
+      setIsGitRepo(true);
+      loadGitRepository(repo);
+    }
+  }, [location]);
+  
+  // Load files from Git repository
+  const loadGitRepository = async (repositoryName: string) => {
+    try {
+      const rootFiles = await githubService.listFiles(repositoryName);
       
-      const activeTab = tabs.find(tab => tab.id === activeTabId);
-      if (activeTab) {
-        setFilename(activeTab.name);
-        setSelectedFilePath(activeTab.path);
-        setDocumentTitle(activeTab.name.split('.')[0]);
+      // Convert to file structure
+      const gitFileStructure = await buildFileTree(repositoryName, '/', rootFiles);
+      
+      setGitFiles(gitFileStructure);
+      setTabs(gitFileStructure.map(file => ({
+        id: file.id,
+        name: file.name,
+        path: file.path,
+        extension: file.extension,
+        isDirty: false
+      })));
+      
+      // Load file status
+      await refreshGitStatus(repositoryName);
+      
+    } catch (error) {
+      console.error('Error loading git repository:', error);
+      // If repository doesn't exist locally, redirect to GitHub page
+      navigate('/github');
+    }
+  };
+  
+  // Build file tree from Git repository
+  const buildFileTree = async (
+    repositoryName: string,
+    currentPath: string,
+    fileList: string[]
+  ): Promise<FileItem[]> => {
+    const result: FileItem[] = [];
+    
+    for (const fileName of fileList) {
+      const fullPath = `${currentPath === '/' ? '' : currentPath}/${fileName}`;
+      const isDir = await githubService.isDirectory(repositoryName, fullPath);
+      
+      if (isDir) {
+        // This is a directory, recursively process its contents
+        const subFiles = await githubService.listFiles(repositoryName, fullPath);
+        
+        const item: FileItem = {
+          id: uuidv4(),
+          name: fileName,
+          type: 'folder',
+          path: fullPath,
+          isOpen: false,
+          children: await buildFileTree(repositoryName, fullPath, subFiles)
+        };
+        
+        result.push(item);
+      } else {
+        // This is a file
+        const ext = getFileExtension(fileName);
+        
+        const item: FileItem = {
+          id: uuidv4(),
+          name: fileName,
+          type: 'file',
+          path: fullPath,
+          extension: ext
+        };
+        
+        result.push(item);
       }
     }
-  }, [activeTabId]);
-
+    
+    return result;
+  };
+  
+  // Refresh Git status
+  const refreshGitStatus = async (repoName: string) => {
+    if (!repoName) return;
+    
+    try {
+      const statusInfo = await githubService.getStatus(repoName);
+      setModifiedFiles(statusInfo);
+      
+      // Update file list with status
+      setTabs(prevTabs => prevTabs.map(tab => ({
+        ...tab,
+        status: statusInfo.find(s => s.path === tab.path.substring(1))?.status
+      })));
+    } catch (error) {
+      console.error('Error refreshing git status:', error);
+    }
+  };
+  
   // Update tab and file content when document changes
   useEffect(() => {
     // Skip initial render
@@ -443,52 +667,41 @@ const EditorPage: React.FC = () => {
     });
   };
 
-  const handleFileSelect = (file: FileItem) => {
+  const handleFileSelect = async (file: FileItem) => {
     if (file.type !== 'file') return;
     
-    // Check if file is already open in a tab
+    // Check if the file is already open
     const existingTab = tabs.find(tab => tab.path === file.path);
     
     if (existingTab) {
-      // Switch to existing tab
       setActiveTabId(existingTab.id);
       return;
     }
     
     // Create a new tab
-    const newTabId = uuidv4();
-    const extension = file.name.split('.').pop() || '';
+    const newTab: TabItem = {
+      id: file.id,
+      name: file.name,
+      path: file.path,
+      extension: file.extension,
+      isDirty: false
+    };
     
-    // Generate sample content based on file type
-    let newContent = '<p>Content of ' + file.name + '</p>';
-    let newIsMarkdownMode = false;
-    
-    if (extension === 'ts' || extension === 'tsx' || extension === 'js' || extension === 'jsx' || extension === 'css') {
-      newContent = '<p>// Code content for ' + file.name + '</p>';
-      newIsMarkdownMode = true;
+    // Load file content from Git repository if in Git mode
+    if (isGitRepo && repoName) {
+      try {
+        // The path in the file item has a leading '/', remove it for the API call
+        const filePath = file.path.startsWith('/') ? file.path.substring(1) : file.path;
+        const content = await githubService.readFile(repoName, filePath);
+        newTab.content = content;
+      } catch (error) {
+        console.error('Error loading file from git:', error);
+        newTab.content = '';
+      }
     }
     
-    // Add new tab
-    setTabs(prev => [...prev, {
-      id: newTabId,
-      path: file.path,
-      name: file.name,
-      isDirty: false,
-      extension
-    }]);
-    
-    // Add file content
-    setFileContents(prev => ({
-      ...prev,
-      [newTabId]: {
-        content: newContent,
-        isDirty: false,
-        isMarkdownMode: newIsMarkdownMode
-      }
-    }));
-    
-    // Switch to new tab
-    setActiveTabId(newTabId);
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
   };
 
   // Handler for undo action
@@ -694,15 +907,148 @@ const EditorPage: React.FC = () => {
     setShowAgentPanel(prev => !prev);
   };
 
+  // Add a content save handler
+  const handleContentSave = (content: string) => {
+    // Find current tab
+    const currentTab = tabs.find(tab => tab.id === activeTabId);
+    if (!currentTab || !currentTab.path) return;
+    
+    // Update tabs with new content
+    const updatedTabs = tabs.map(tab => 
+      tab.id === activeTabId ? { ...tab, content } : tab
+    );
+    setTabs(updatedTabs);
+    
+    // Save to Git if in Git mode
+    if (isGitRepo && repoName) {
+      saveToGit(currentTab.path, content);
+    }
+  };
+
+  // Add Git toolbar to the page
+  const renderGitToolbar = () => {
+    if (!isGitRepo) return null;
+    
+    return (
+      <GitToolbar>
+        <ToolbarButton onClick={() => refreshGitStatus(repoName!)}>
+          Refresh Status
+          {modifiedFiles.length > 0 && <GitStatusBadge count={modifiedFiles.length}>
+            {modifiedFiles.length}
+          </GitStatusBadge>}
+        </ToolbarButton>
+        
+        <ToolbarSeparator />
+        
+        <FileNameInput 
+          placeholder="Commit message..." 
+          value={commitMessage}
+          onChange={(e) => setCommitMessage(e.target.value)}
+        />
+        
+        <ToolbarButton 
+          onClick={handleCommit}
+          disabled={isCommitting || modifiedFiles.length === 0}
+        >
+          {isCommitting ? 'Committing...' : 'Commit'}
+        </ToolbarButton>
+        
+        <ToolbarButton 
+          onClick={handlePush}
+          disabled={isPushing}
+        >
+          {isPushing ? 'Pushing...' : 'Push'}
+        </ToolbarButton>
+        
+        <ToolbarButton 
+          onClick={handlePull}
+          disabled={isPulling}
+        >
+          {isPulling ? 'Pulling...' : 'Pull'}
+        </ToolbarButton>
+      </GitToolbar>
+    );
+  };
+
+  // Inside the EditorPage component, after the existing sidebar state
+  const [showCollaboration, setShowCollaboration] = useState<boolean>(false);
+  const [showPermissions, setShowPermissions] = useState<boolean>(false);
+  
+  // Add this after the existing toggleSidebar function
+  const toggleCollaboration = () => {
+    setShowCollaboration(prev => !prev);
+  };
+  
+  // Add toggle for permissions panel
+  const togglePermissions = () => {
+    setShowPermissions(prev => !prev);
+  };
+
+  // Add the missing Git-related functions to the EditorPage component
+  const saveToGit = async (filePath: string, content: string) => {
+    if (!repoName) return;
+    
+    try {
+      await githubService.writeFile(repoName, filePath, content);
+      await refreshGitStatus(repoName);
+    } catch (error) {
+      console.error('Error saving to git:', error);
+    }
+  };
+
+  const handleCommit = async () => {
+    if (!repoName || !commitMessage) return;
+    
+    try {
+      setIsCommitting(true);
+      await githubService.commit(repoName, commitMessage);
+      setCommitMessage('');
+      await refreshGitStatus(repoName);
+    } catch (error) {
+      console.error('Error committing changes:', error);
+    } finally {
+      setIsCommitting(false);
+    }
+  };
+
+  const handlePush = async () => {
+    if (!repoName) return;
+    
+    try {
+      setIsPushing(true);
+      await githubService.push(repoName);
+      await refreshGitStatus(repoName);
+    } catch (error) {
+      console.error('Error pushing changes:', error);
+    } finally {
+      setIsPushing(false);
+    }
+  };
+
+  const handlePull = async () => {
+    if (!repoName) return;
+    
+    try {
+      setIsPulling(true);
+      await githubService.pull(repoName);
+      await loadGitRepository(repoName);
+    } catch (error) {
+      console.error('Error pulling changes:', error);
+    } finally {
+      setIsPulling(false);
+    }
+  };
+
   return (
     <PageContainer showAgentPanel={showAgentPanel}>
       <FileBrowser 
-        files={sampleFiles}
+        files={gitFiles}
         onFileSelect={handleFileSelect}
-        selectedFilePath={selectedFilePath}
       />
       
       <EditorContainer>
+        {renderGitToolbar()}
+        
         <TabBar 
           tabs={tabs}
           activeTabId={activeTabId}
@@ -859,6 +1205,13 @@ const EditorPage: React.FC = () => {
               </ToolbarButton>
             </>
           )}
+          <ToolbarButton 
+            onClick={toggleCollaboration} 
+            title="Toggle Collaboration" 
+            active={showCollaboration}
+          >
+            <BiNetworkChart size={18} />
+          </ToolbarButton>
         </EditorToolbar>
         
         <EditorContent>
@@ -878,7 +1231,7 @@ const EditorPage: React.FC = () => {
       {/* Agent panel */}
       <AgentPanel visible={showAgentPanel}>
         <AgentContainer 
-          files={sampleFiles}
+          files={gitFiles}
           currentFile={tabs.find(tab => tab.id === activeTabId) 
             ? { 
                 id: activeTabId, 
@@ -899,6 +1252,35 @@ const EditorPage: React.FC = () => {
       >
         {showAgentPanel ? '👈' : '🤖'}
       </AgentToggleButton>
+      
+      {/* Collaboration sidebar */}
+      <CollaborationSidebar $isOpen={showCollaboration}>
+        <CollaborationProvider>
+          <SidebarHeader>
+            <h3>Collaboration</h3>
+            <CloseButton onClick={toggleCollaboration}>
+              <BiX size={20} />
+            </CloseButton>
+          </SidebarHeader>
+          <CollaborationPanels>
+            {showPermissions ? (
+              <PermissionsPanel 
+                documentId={activeTabId} 
+                onClose={togglePermissions}
+              />
+            ) : (
+              <>
+                <CollaborationStatus documentId={activeTabId} />
+                <CollaborationUsersList />
+                <PermissionsButton onClick={togglePermissions}>
+                  <BiUserCheck size={18} />
+                  Manage Permissions
+                </PermissionsButton>
+              </>
+            )}
+          </CollaborationPanels>
+        </CollaborationProvider>
+      </CollaborationSidebar>
     </PageContainer>
   );
 };
