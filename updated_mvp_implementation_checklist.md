@@ -129,9 +129,9 @@ Based on code review, the project has the following status:
   - [x] Add debouncing for performance
   - [x] Create save indicators
 - [x] Create undo/redo functionality
-- [ ] Add find and replace capabilities
+- [x] Add find and replace capabilities
 - [ ] Implement code folding for code files
-- [ ] Add line numbering and gutter indicators
+- [x] Add line numbering and gutter indicators
 - [ ] Create minimap for code navigation
 - [ ] Implement keyboard shortcuts for common operations
 - [x] Add support for themes (light/dark mode)
