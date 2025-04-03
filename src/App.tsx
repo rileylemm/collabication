@@ -1,35 +1,44 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import { ThemeProvider as StyledThemeProvider } from 'styled-components';
-import { useTheme } from './contexts/ThemeContext';
-import { darkTheme, lightTheme } from './styles/theme';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { darkTheme, lightTheme, Theme } from './styles/theme';
 import GlobalStyle from './styles/GlobalStyle';
-
-// Import pages
+import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
+import GitHubPage from './pages/GitHubPage';
 import NotFoundPage from './pages/NotFoundPage';
-import AgentPage from './pages/AgentPage';
+import { GitHubProvider } from './contexts/GitHubContext';
 
-// Import components
-import Layout from './components/Layout';
-
-const App: React.FC = () => {
+const AppContent = () => {
   const { theme } = useTheme();
-  const currentTheme = theme === 'dark' ? darkTheme : lightTheme;
+  const currentTheme: Theme = theme === 'dark' ? darkTheme : lightTheme;
 
   return (
     <StyledThemeProvider theme={currentTheme}>
       <GlobalStyle />
-      <Layout>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/editor/:documentId?" element={<EditorPage />} />
-          <Route path="/agent/:projectId?" element={<AgentPage />} />
+      <Routes>
+        <Route path="/" element={<Layout><Outlet /></Layout>}>
+          <Route index element={<HomePage />} />
+          <Route path="editor" element={<EditorPage />} />
+          <Route path="github" element={<GitHubPage />} />
           <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Layout>
+        </Route>
+      </Routes>
     </StyledThemeProvider>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ThemeProvider>
+      <GitHubProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </GitHubProvider>
+    </ThemeProvider>
   );
 };
 

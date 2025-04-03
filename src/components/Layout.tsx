@@ -130,6 +130,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </NavLink>
               </NavItem>
               <NavItem>
+                <NavLink to="/github" $active={location.pathname.startsWith('/github')}>
+                  <NavIcon>📂</NavIcon>
+                  GitHub
+                </NavLink>
+              </NavItem>
+              <NavItem>
                 <NavLink to="/agent" $active={location.pathname.startsWith('/agent')}>
                   <NavIcon>🤖</NavIcon>
                   Agent
