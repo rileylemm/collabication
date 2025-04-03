@@ -50,8 +50,17 @@ services:
     environment:
       - NODE_ENV=development
       - MONGO_URI=mongodb://mongodb:27017/collabication
+      - JWT_SECRET=collabication-development-secret-do-not-use-in-production
+      - LOG_LEVEL=info
+      - PORT=1234
     depends_on:
       - mongodb
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:1234/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # MongoDB database
   mongodb:
@@ -67,4 +76,4 @@ volumes:
   node_modules:
   api_node_modules:
   collab_node_modules:
-  mongodb_data: 
+  mongodb_data:

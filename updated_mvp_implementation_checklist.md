@@ -195,17 +195,17 @@ Based on code review, the project has the following status:
 ## Phase 6: Real-time Collaboration
 
 ### 10. Collaboration Server
-- [ ] Set up Yjs server with WebSocket support
-  - [ ] Configure the server with proper settings
-  - [ ] Add connection handling and error recovery
-- [ ] Implement document synchronization protocol
-- [ ] Create user authentication for collaboration
-- [ ] Add room/document management
-- [ ] Implement awareness protocol for user presence
-- [ ] Create persistence layer for collaboration data
-- [ ] Add logging and monitoring for collaboration events
-- [ ] Dockerize the collaboration server
-  - [ ] Complete the collab-server.Dockerfile with proper configuration
+- [x] Set up Yjs server with WebSocket support
+  - [x] Configure the server with proper settings
+  - [x] Add connection handling and error recovery
+- [x] Implement document synchronization protocol
+- [x] Create user authentication for collaboration
+- [x] Add room/document management
+- [x] Implement awareness protocol for user presence
+- [x] Create persistence layer for collaboration data
+- [x] Add logging and monitoring for collaboration events
+- [x] Dockerize the collaboration server
+  - [x] Complete the collab-server.Dockerfile with proper configuration
 
 ### 11. Client-side Collaboration
 - [x] Integrate Yjs client library
@@ -213,7 +213,7 @@ Based on code review, the project has the following status:
   - [x] Create connection management
 - [x] Implement CRDT data structures for document types
   - [x] Add support for rich text documents
-  - [ ] Add support for code documents
+  - [x] Add support for code documents
 - [x] Create user presence indicators (cursors, avatars)
 - [x] Add real-time updates for document changes
 - [x] Implement conflict-free merging of changes

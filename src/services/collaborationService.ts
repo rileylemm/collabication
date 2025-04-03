@@ -41,7 +41,7 @@ interface CollaborationConfig {
 
 // Default configuration
 const defaultConfig: CollaborationConfig = {
-  serverUrl: 'wss://collabication-ws.example.com',
+  serverUrl: 'ws://localhost:1234',
   roomPrefix: 'collabication-',
   localStorageId: 'collabication-user',
   userColor: '#' + Math.floor(Math.random() * 16777215).toString(16),
@@ -105,9 +105,21 @@ export const connectToDocument = (documentId: string): WebsocketProvider => {
   const doc = getYDoc(documentId);
 
   if (!state.providers.has(documentId)) {
+    // Get authentication token if available
+    const token = localStorage.getItem('github_token') || '';
+    
+    // Create connection parameters
+    const params = new URLSearchParams();
+    if (token) {
+      params.append('token', token);
+    }
+    
+    // Add the token to the URL
+    const serverUrl = `${currentConfig.serverUrl}?${params.toString()}`;
+    
     // Create a WebSocket provider
     const provider = new WebsocketProvider(
-      currentConfig.serverUrl,
+      serverUrl,
       `${currentConfig.roomPrefix}${documentId}`,
       doc,
       { connect: true }

@@ -21,6 +21,11 @@ import { search, searchKeymap, openSearchPanel, closeSearchPanel } from '@codemi
 import styled from 'styled-components';
 import { Decoration } from '@codemirror/view';
 import Minimap from './Minimap';
+import * as Y from 'yjs';
+import { yCollab } from 'y-codemirror.next';
+import { WebsocketProvider } from 'y-websocket';
+import { Awareness } from 'y-protocols/awareness';
+import { randomColor } from '../utils/colorUtils';
 
 // Define a public API for the editor
 export interface CodeEditorRef {
@@ -47,6 +52,15 @@ interface CodeEditorProps {
   darkMode?: boolean;
   onReady?: (ref: CodeEditorRef) => void;
   showMinimap?: boolean;
+  // Collaboration props
+  isCollaborative?: boolean;
+  documentId?: string;
+  ydoc?: Y.Doc;
+  wsProvider?: WebsocketProvider;
+  user?: {
+    name: string;
+    color: string;
+  };
 }
 
 const EditorContainer = styled.div`
@@ -129,6 +143,31 @@ const EditorContainer = styled.div`
   .cm-activeLineGutter {
     background-color: rgba(128, 128, 128, 0.1);
   }
+
+  /* Collaboration cursor styles */
+  .cm-ySelectionInfo {
+    position: absolute;
+    top: -1.6em;
+    left: -1px;
+    font-size: 12px;
+    font-family: system-ui, Arial, sans-serif;
+    font-style: normal;
+    font-weight: 600;
+    line-height: normal;
+    white-space: nowrap;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px 4px 4px 0;
+    z-index: 1000;
+    transition: opacity 0.3s ease;
+  }
+
+  .cm-yRemoteSelection {
+    border-left: 1px solid;
+    position: relative;
+    box-sizing: border-box;
+    transition: opacity 0.3s ease;
+  }
 `;
 
 // Adjust the editor padding when minimap is shown
@@ -144,11 +183,17 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
   onChange, 
   darkMode = false,
   onReady,
-  showMinimap = true
+  showMinimap = true,
+  isCollaborative = false,
+  documentId,
+  ydoc,
+  wsProvider,
+  user
 }, ref) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
+  const [ytext, setYtext] = useState<Y.Text | null>(null);
   
   // Expose public methods to parent component
   useImperativeHandle(ref, () => ({
@@ -226,6 +271,25 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
     }
   }));
 
+  // Initialize Yjs document if needed
+  useEffect(() => {
+    if (isCollaborative && documentId && ydoc) {
+      // Get the shared text from the Yjs document
+      const ytext = ydoc.getText(`code-${documentId}`);
+      
+      // If the document is empty, initialize it with code
+      if (ytext.length === 0 && code) {
+        ytext.insert(0, code);
+      }
+      
+      setYtext(ytext);
+      
+      return () => {
+        setYtext(null);
+      };
+    }
+  }, [isCollaborative, documentId, ydoc, code]);
+
   // Get the language extension based on the specified language
   const getLanguageExtension = () => {
     switch (language) {
@@ -257,26 +321,91 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
       }
     };
 
-    const state = EditorState.create({
-      doc: code,
-      extensions: [
-        // Basic editor setup
-        lineNumbers(),
-        highlightActiveLineGutter(),
-        highlightSpecialChars(),
+    // Extensions array to build
+    const extensions = [
+      // Basic editor setup
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightSpecialChars(),
+      drawSelection(),
+      bracketMatching(),
+      indentOnInput(),
+      syntaxHighlighting(defaultHighlightStyle),
+      
+      // Search extension
+      search({
+        top: true
+      }),
+      
+      // Language support
+      getLanguageExtension(),
+      
+      // Theme
+      theme,
+    ];
+
+    // Add either standard history or Yjs collaboration
+    if (isCollaborative && ytext && wsProvider) {
+      const awareness = wsProvider.awareness;
+      
+      // Set user information
+      const userData = user || {
+        name: 'Anonymous',
+        color: randomColor()
+      };
+      
+      // Set local user state
+      awareness.setLocalStateField('user', {
+        name: userData.name,
+        color: userData.color
+      });
+      
+      // Add collaboration extensions
+      extensions.push(
+        // CodeMirror Yjs binding
+        yCollab(ytext, wsProvider.awareness, { undoManager: true }),
+        
+        // Update listener
+        EditorView.updateListener.of(update => {
+          if (update.docChanged && onChange) {
+            onChange(update.state.doc.toString());
+          }
+        })
+      );
+    } else {
+      // Standard history when not collaborative
+      extensions.push(
         history(),
-        foldGutter(foldGutterConfig),
-        drawSelection(),
-        bracketMatching(),
-        indentOnInput(),
-        syntaxHighlighting(defaultHighlightStyle),
         
-        // Search extension
-        search({
-          top: true
-        }),
-        
-        // Keymaps
+        // Update listener
+        EditorView.updateListener.of(update => {
+          if (update.docChanged && onChange) {
+            onChange(update.state.doc.toString());
+          }
+        })
+      );
+    }
+    
+    // Add keymaps appropriate for the mode (collaborative or not)
+    if (isCollaborative) {
+      extensions.push(
+        keymap.of([
+          ...defaultKeymap, 
+          ...foldKeymap,
+          ...searchKeymap,
+          // Add custom fold/unfold keyboard shortcuts
+          { key: "Ctrl-Alt-[", run: foldCode },
+          { key: "Cmd-Alt-[", run: foldCode },
+          { key: "Ctrl-Alt-]", run: unfoldCode },
+          { key: "Cmd-Alt-]", run: unfoldCode },
+          { key: "Ctrl-Alt-Shift-[", run: foldAll },
+          { key: "Cmd-Alt-Shift-[", run: foldAll },
+          { key: "Ctrl-Alt-Shift-]", run: unfoldAll },
+          { key: "Cmd-Alt-Shift-]", run: unfoldAll }
+        ])
+      );
+    } else {
+      extensions.push(
         keymap.of([
           ...defaultKeymap, 
           ...historyKeymap, 
@@ -291,21 +420,18 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
           { key: "Cmd-Alt-Shift-[", run: foldAll },
           { key: "Ctrl-Alt-Shift-]", run: unfoldAll },
           { key: "Cmd-Alt-Shift-]", run: unfoldAll }
-        ]),
-        
-        // Language support
-        getLanguageExtension(),
-        
-        // Theme
-        theme,
-        
-        // Update listener
-        EditorView.updateListener.of(update => {
-          if (update.docChanged && onChange) {
-            onChange(update.state.doc.toString());
-          }
-        }),
-      ],
+        ])
+      );
+    }
+    
+    // Add fold gutter
+    extensions.push(foldGutter(foldGutterConfig));
+
+    const initDoc = isCollaborative && ytext ? '' : code;
+    
+    const state = EditorState.create({
+      doc: initDoc,
+      extensions
     });
 
     setEditorState(state);
@@ -313,7 +439,7 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
     return () => {
       setEditorState(null);
     };
-  }, [code, language, darkMode, onChange]);
+  }, [code, language, darkMode, onChange, isCollaborative, ytext, wsProvider, user]);
 
   // Create or update the editor view when the state changes
   useEffect(() => {

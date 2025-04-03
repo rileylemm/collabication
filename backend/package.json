@@ -19,6 +19,7 @@
     "mongoose": "^7.3.0",
     "socket.io": "^4.7.0",
     "winston": "^3.9.0",
+    "ws": "^8.13.0",
     "y-mongodb-provider": "^0.1.7",
     "y-websocket": "^1.5.0",
     "yjs": "^13.6.4"
@@ -28,4 +29,4 @@
     "nodemon": "^2.0.22",
     "supertest": "^6.3.3"
   }
-} 
+}
