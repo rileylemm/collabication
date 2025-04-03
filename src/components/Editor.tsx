@@ -1,22 +1,33 @@
-import React from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import React, { useEffect } from 'react';
+import { useEditor, EditorContent, Editor as TiptapEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import Highlight from '@tiptap/extension-highlight';
+import Underline from '@tiptap/extension-underline';
+import Link from '@tiptap/extension-link';
+import { Markdown } from 'tiptap-markdown';
 import styled from 'styled-components';
 
 interface EditorProps {
   content?: string;
   onChange?: (html: string) => void;
+  onChangeMarkdown?: (markdown: string) => void;
+  isMarkdownMode?: boolean;
+  placeholder?: string;
+  onEditorReady?: (editor: TiptapEditor | null) => void;
 }
 
-const EditorContainer = styled.div`
+const EditorContainer = styled.div<{ isMarkdownMode: boolean }>`
   border: 1px solid ${props => props.theme.colors.border};
   border-radius: ${props => props.theme.borderRadius.medium};
   overflow: hidden;
+  height: 100%;
   
   .ProseMirror {
     padding: 1rem;
     min-height: 500px;
     outline: none;
+    font-family: ${props => props.isMarkdownMode ? 'monospace' : 'inherit'};
     
     p {
       margin: 0.5rem 0;
@@ -57,22 +68,91 @@ const EditorContainer = styled.div`
         padding: 0;
       }
     }
+
+    .ProseMirror-placeholder {
+      color: ${props => props.theme.colors.textSecondary};
+      pointer-events: none;
+    }
+
+    a {
+      color: ${props => props.theme.colors.primary};
+      text-decoration: underline;
+      cursor: pointer;
+    }
   }
 `;
 
-const Editor: React.FC<EditorProps> = ({ content = '', onChange }) => {
+const Editor: React.FC<EditorProps> = ({ 
+  content = '', 
+  onChange, 
+  onChangeMarkdown,
+  isMarkdownMode = false,
+  placeholder = 'Start typing here...',
+  onEditorReady
+}) => {
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Placeholder.configure({
+        placeholder,
+      }),
+      Highlight,
+      Underline,
+      Link.configure({
+        openOnClick: true,
+        HTMLAttributes: {
+          rel: 'noopener noreferrer',
+          target: '_blank',
+        },
+      }),
+      Markdown.configure({
+        html: true,
+        tightLists: true,
+        tightListClass: 'tight',
+        bulletListMarker: '-',
+        linkify: true,
+      }),
     ],
     content,
+    editorProps: {
+      attributes: {
+        class: isMarkdownMode ? 'markdown-mode' : 'richtext-mode',
+      },
+    },
     onUpdate: ({ editor }) => {
-      onChange?.(editor.getHTML());
+      if (onChange) {
+        onChange(editor.getHTML());
+      }
+      
+      if (onChangeMarkdown) {
+        const markdown = editor.storage.markdown.getMarkdown();
+        onChangeMarkdown(markdown);
+      }
     },
   });
 
+  // Update the editor content when the isMarkdownMode changes
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(true);
+    }
+  }, [editor, isMarkdownMode]);
+
+  // Notify the parent component about the editor instance
+  useEffect(() => {
+    if (onEditorReady) {
+      onEditorReady(editor);
+    }
+    
+    return () => {
+      if (onEditorReady) {
+        onEditorReady(null);
+      }
+    };
+  }, [editor, onEditorReady]);
+
   return (
-    <EditorContainer>
+    <EditorContainer isMarkdownMode={isMarkdownMode}>
       <EditorContent editor={editor} />
     </EditorContainer>
   );
