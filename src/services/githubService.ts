@@ -13,6 +13,7 @@ export type FileStatus = 'unmodified' | 'modified' | 'added' | 'deleted' | 'untr
 export interface FileStatusInfo {
   path: string;
   status: FileStatus;
+  staged: boolean; // Whether the file is staged for commit
 }
 
 export interface CommitResult {
@@ -99,6 +100,23 @@ export interface CommitInfo {
   };
   files?: string[]; // Files changed in this commit
   parentSHA?: string; // The parent commit SHA
+}
+
+// Add new interfaces for conflict information
+export interface ConflictMarker {
+  start: number;
+  middle: number;
+  end: number;
+}
+
+export interface ConflictInfo {
+  path: string;
+  content: string;
+  conflicts: Array<{
+    marker: ConflictMarker;
+    ours: string;
+    theirs: string;
+  }>;
 }
 
 // Helper function to initialize git configuration
@@ -193,24 +211,32 @@ class GitHubService {
       // Map status matrix to file status information
       const result: FileStatusInfo[] = statusMatrix.map(([filepath, headStatus, workdirStatus, stageStatus]) => {
         let status: FileStatus = 'unmodified';
+        let staged = false;
         
         // Using explicit number comparisons instead of type-specific comparisons
         // 0 = absent, 1 = identical to HEAD, 2 = different from HEAD
+        // For stage status: 0 = unstaged, 2 = staged
         if (Number(headStatus) === 0 && Number(workdirStatus) === 2) {
           status = 'added';
+          staged = Number(stageStatus) === 2;
         } else if (Number(headStatus) === 0 && Number(workdirStatus) === 0) {
           status = 'deleted';
+          staged = Number(stageStatus) === 0;
         } else if (Number(headStatus) === 2 && Number(workdirStatus) === 0) {
           status = 'deleted';
-        } else if (Number(headStatus) === 2 && Number(workdirStatus) === 2 && Number(stageStatus) !== Number(workdirStatus)) {
+          staged = Number(stageStatus) === 0;
+        } else if (Number(headStatus) === 2 && Number(workdirStatus) === 2) {
           status = 'modified';
+          staged = Number(stageStatus) === 2 && Number(stageStatus) === Number(workdirStatus);
         } else if (Number(headStatus) === 0 && Number(workdirStatus) === 0 && Number(stageStatus) === 0) {
           status = 'untracked';
+          staged = false;
         }
         
         return {
           path: filepath,
           status,
+          staged,
         };
       });
       
@@ -1267,6 +1293,272 @@ class GitHubService {
       return currentBranch || 'HEAD';
     } catch (error) {
       console.error('Error getting current branch:', error);
+      throw error;
+    }
+  }
+
+  // Attempt to pull with conflict detection
+  async pullWithConflictDetection(
+    repositoryName: string,
+    token: string,
+    branch: string = 'main'
+  ): Promise<{ success: boolean; conflictingFiles: string[] }> {
+    try {
+      // First try with fastForwardOnly to see if we can pull without conflicts
+      await git.pull({
+        fs,
+        http,
+        dir: `/${repositoryName}`,
+        remote: 'origin',
+        ref: branch,
+        onAuth: () => ({
+          username: token,
+        }),
+        fastForwardOnly: true,
+        onProgress: (progress) => {
+          console.log('Pull progress:', progress);
+        },
+      });
+      
+      return { success: true, conflictingFiles: [] };
+    } catch (error) {
+      // Check if the error is a fast-forward error which indicates potential conflicts
+      if (error instanceof Error && error.message.includes('fast-forward')) {
+        try {
+          // Try to perform a merge to identify conflicts
+          await git.pull({
+            fs,
+            http,
+            dir: `/${repositoryName}`,
+            remote: 'origin',
+            ref: branch,
+            onAuth: () => ({
+              username: token,
+            }),
+            fastForwardOnly: false,
+            onProgress: (progress) => {
+              console.log('Pull progress:', progress);
+            },
+          });
+          
+          // If we reach here, the merge succeeded without conflicts
+          return { success: true, conflictingFiles: [] };
+        } catch (mergeError) {
+          // This is likely a merge conflict
+          console.error('Merge conflict detected:', mergeError);
+          
+          // Get the list of files with conflicts
+          const conflictingFiles = await this.getConflictingFiles(repositoryName);
+          
+          return { 
+            success: false, 
+            conflictingFiles 
+          };
+        }
+      }
+      
+      // Rethrow other errors
+      console.error('Error pulling changes:', error);
+      throw error;
+    }
+  }
+
+  // Get a list of files with conflicts
+  async getConflictingFiles(repositoryName: string): Promise<string[]> {
+    try {
+      const status = await git.statusMatrix({
+        fs,
+        dir: `/${repositoryName}`,
+      });
+      
+      // Filter for files with conflicts
+      // In git status matrix, if a file has merge conflicts, 
+      // the first number (HEAD) is 2, the second (workdir) is 2, and the third (stage) is 0
+      const conflictingFiles = status
+        .filter(([_, head, workdir, stage]) => {
+          // Use strict equality check with numerical values (0, 1, 2 are the possible values)
+          return Number(head) === 2 && Number(workdir) === 2 && Number(stage) === 0;
+        })
+        .map(([filepath]) => filepath as string);
+      
+      return conflictingFiles;
+    } catch (error) {
+      console.error('Error getting conflicting files:', error);
+      throw error;
+    }
+  }
+
+  // Get conflict details for a specific file
+  async getConflictInfo(repositoryName: string, filepath: string): Promise<ConflictInfo | null> {
+    try {
+      // Read the file content
+      const content = await this.readFile(repositoryName, filepath);
+      
+      // Parse the content to find conflict markers
+      const conflicts = this.parseConflictMarkers(content);
+      
+      if (conflicts.length === 0) {
+        return null;
+      }
+      
+      return {
+        path: filepath,
+        content,
+        conflicts
+      };
+    } catch (error) {
+      console.error('Error getting conflict info:', error);
+      throw error;
+    }
+  }
+
+  // Parse conflict markers in file content
+  private parseConflictMarkers(content: string): Array<{
+    marker: ConflictMarker;
+    ours: string;
+    theirs: string;
+  }> {
+    const lines = content.split('\n');
+    const conflicts: Array<{
+      marker: ConflictMarker;
+      ours: string;
+      theirs: string;
+    }> = [];
+    
+    let i = 0;
+    while (i < lines.length) {
+      if (lines[i].startsWith('<<<<<<<')) {
+        const startLine = i;
+        let middleLine = -1;
+        let endLine = -1;
+        
+        // Find the middle marker
+        for (let j = i + 1; j < lines.length; j++) {
+          if (lines[j].startsWith('=======')) {
+            middleLine = j;
+            break;
+          }
+        }
+        
+        // Find the end marker
+        for (let j = middleLine + 1; j < lines.length; j++) {
+          if (lines[j].startsWith('>>>>>>>')) {
+            endLine = j;
+            break;
+          }
+        }
+        
+        if (middleLine !== -1 && endLine !== -1) {
+          // Extract our changes and their changes
+          const ours = lines.slice(startLine + 1, middleLine).join('\n');
+          const theirs = lines.slice(middleLine + 1, endLine).join('\n');
+          
+          conflicts.push({
+            marker: {
+              start: startLine,
+              middle: middleLine,
+              end: endLine
+            },
+            ours,
+            theirs
+          });
+          
+          i = endLine + 1;
+        } else {
+          // Malformed conflict markers, skip this one
+          i++;
+        }
+      } else {
+        i++;
+      }
+    }
+    
+    return conflicts;
+  }
+
+  // Resolve a conflict in a file by choosing which version to keep
+  async resolveConflict(
+    repositoryName: string,
+    filepath: string,
+    resolution: 'ours' | 'theirs' | 'custom',
+    customContent?: string
+  ): Promise<void> {
+    try {
+      // Get the conflict info
+      const conflictInfo = await this.getConflictInfo(repositoryName, filepath);
+      
+      if (!conflictInfo) {
+        throw new Error('No conflicts found in file: ' + filepath);
+      }
+      
+      let resolvedContent = conflictInfo.content;
+      
+      // Apply the resolution to each conflict
+      for (let i = conflictInfo.conflicts.length - 1; i >= 0; i--) {
+        const conflict = conflictInfo.conflicts[i];
+        const lines = resolvedContent.split('\n');
+        
+        let replacementContent: string;
+        if (resolution === 'ours') {
+          replacementContent = conflict.ours;
+        } else if (resolution === 'theirs') {
+          replacementContent = conflict.theirs;
+        } else if (resolution === 'custom' && customContent !== undefined) {
+          replacementContent = customContent;
+        } else {
+          throw new Error('Invalid resolution method or missing custom content');
+        }
+        
+        // Replace the conflict markers and content with the resolved content
+        lines.splice(
+          conflict.marker.start,
+          conflict.marker.end - conflict.marker.start + 1,
+          replacementContent
+        );
+        
+        resolvedContent = lines.join('\n');
+      }
+      
+      // Write the resolved content back to the file
+      await this.writeFile(repositoryName, filepath, resolvedContent);
+      
+      // Mark the file as resolved in git
+      await git.add({
+        fs,
+        dir: `/${repositoryName}`,
+        filepath,
+      });
+    } catch (error) {
+      console.error('Error resolving conflict:', error);
+      throw error;
+    }
+  }
+
+  // After resolving all conflicts, complete the merge
+  async completeConflictResolution(
+    repositoryName: string,
+    commitMessage: string = 'Merge conflict resolution'
+  ): Promise<void> {
+    try {
+      // Check if there are still unresolved conflicts
+      const conflictingFiles = await this.getConflictingFiles(repositoryName);
+      
+      if (conflictingFiles.length > 0) {
+        throw new Error('Cannot complete merge: still have unresolved conflicts in ' + conflictingFiles.join(', '));
+      }
+      
+      // Commit the resolved conflicts
+      await git.commit({
+        fs,
+        dir: `/${repositoryName}`,
+        message: commitMessage,
+        author: {
+          name: 'Conflict Resolver',
+          email: 'resolver@example.com'
+        }
+      });
+    } catch (error) {
+      console.error('Error completing conflict resolution:', error);
       throw error;
     }
   }

@@ -13,6 +13,11 @@ services:
       - NPCSH_API_URL=http://npcsh-api:4000
       - COLLAB_SERVER_URL=wss://collab.${DOMAIN:-example.com}
       - MONGO_URI=mongodb://mongodb:27017/collabication
+    logging:
+      driver: 'fluentd'
+      options:
+        fluentd-address: localhost:24224
+        tag: docker.frontend-build
 
   # npcsh API adapter service
   npcsh-api:
@@ -32,6 +37,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      fluentd:
+        condition: service_started
     healthcheck:
       test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:4000/health']
       interval: 30s
@@ -39,10 +46,10 @@ services:
       retries: 3
       start_period: 10s
     logging:
-      driver: 'json-file'
+      driver: 'fluentd'
       options:
-        max-size: '10m'
-        max-file: '3'
+        fluentd-address: localhost:24224
+        tag: docker.npcsh-api
 
   # Collaboration server (Yjs)
   collab-server:
@@ -62,6 +69,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      fluentd:
+        condition: service_started
     healthcheck:
       test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:1234/health']
       interval: 30s
@@ -72,10 +81,10 @@ services:
       - collab_data:/app/data
       - ./logs:/app/logs
     logging:
-      driver: 'json-file'
+      driver: 'fluentd'
       options:
-        max-size: '10m'
-        max-file: '3'
+        fluentd-address: localhost:24224
+        tag: docker.collab-server
 
   # MongoDB database
   mongodb:
@@ -98,10 +107,10 @@ services:
       retries: 3
       start_period: 10s
     logging:
-      driver: 'json-file'
+      driver: 'fluentd'
       options:
-        max-size: '10m'
-        max-file: '3'
+        fluentd-address: localhost:24224
+        tag: docker.mongodb
 
   # Nginx reverse proxy
   nginx:
@@ -117,6 +126,7 @@ services:
     depends_on:
       - collab-server
       - npcsh-api
+      - fluentd
     healthcheck:
       test: ['CMD', 'wget', '--spider', '-q', 'http://localhost/health']
       interval: 30s
@@ -124,10 +134,10 @@ services:
       retries: 3
       start_period: 10s
     logging:
-      driver: 'json-file'
+      driver: 'fluentd'
       options:
-        max-size: '10m'
-        max-file: '3'
+        fluentd-address: localhost:24224
+        tag: docker.nginx
 
   # Backup service
   backup:
@@ -146,10 +156,81 @@ services:
       - mongodb
       - collab-server
     logging:
+      driver: 'fluentd'
+      options:
+        fluentd-address: localhost:24224
+        tag: docker.backup
+
+  # Fluentd for log aggregation
+  fluentd:
+    build:
+      context: ./logging
+      dockerfile: Dockerfile
+    restart: always
+    volumes:
+      - ./logging/fluent.conf:/fluentd/etc/fluent.conf
+      - ./logs:/fluentd/log
+    ports:
+      - '127.0.0.1:24224:24224'
+      - '127.0.0.1:24224:24224/udp'
+    depends_on:
+      - elasticsearch
+    healthcheck:
+      test: ['CMD', 'ps', 'aux', '|', 'grep', 'fluentd', '|', 'grep', '-v', 'grep']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Elasticsearch for log storage and search
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.1
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - '127.0.0.1:9200:9200'
+    healthcheck:
+      test: ['CMD', 'curl', '-s', 'http://localhost:9200/_cluster/health?pretty']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
       driver: 'json-file'
       options:
-        max-size: '5m'
-        max-file: '2'
+        max-size: '10m'
+        max-file: '3'
+
+  # Kibana for log visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.1
+    restart: always
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - '127.0.0.1:5601:5601'
+    depends_on:
+      - elasticsearch
+    healthcheck:
+      test: ['CMD', 'curl', '-s', 'http://localhost:5601/api/status']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
 
 volumes:
   mongodb_data:
@@ -157,4 +238,6 @@ volumes:
   collab_data:
     driver: local
   electron_build:
+    driver: local
+  elasticsearch_data:
     driver: local

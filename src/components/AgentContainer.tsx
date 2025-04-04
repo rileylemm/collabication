@@ -18,7 +18,10 @@ interface FileItem {
 interface AgentContainerProps {
   files?: FileItem[];
   currentFile?: FileItem;
+  currentContent?: string;
+  selectedText?: string;
   onInsertCode?: (code: string, language: string) => void;
+  onInsertText?: (text: string) => void;
   darkMode?: boolean;
 }
 
@@ -32,7 +35,10 @@ const Container = styled.div`
 const AgentContainer: React.FC<AgentContainerProps> = ({
   files = [],
   currentFile,
+  currentContent = '',
+  selectedText = '',
   onInsertCode,
+  onInsertText,
   darkMode = false
 }) => {
   // Chat state
@@ -42,6 +48,30 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
   // Create context items from file tree for agent context selection
   const fileContextItems = useMemo(() => {
     const items: ContextItem[] = [];
+    
+    // Add a special context item for the current editor content if available
+    if (currentContent) {
+      items.push({
+        id: 'current-editor-content',
+        type: 'file',
+        path: currentFile?.path || 'current-file',
+        name: `Current content of ${currentFile?.name || 'the editor'}`,
+        selected: true,
+        content: currentContent
+      });
+    }
+    
+    // Add a special context item for the selected text if available
+    if (selectedText) {
+      items.push({
+        id: 'selected-text',
+        type: 'file',
+        path: currentFile?.path || 'selection',
+        name: 'Selected text',
+        selected: true,
+        content: selectedText
+      });
+    }
     
     const processFileItem = (file: FileItem): ContextItem => ({
       id: file.id,
@@ -63,7 +93,7 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
     
     traverse(files);
     return items;
-  }, [files, currentFile]);
+  }, [files, currentFile, currentContent, selectedText]);
   
   // Add system message when the component mounts
   useEffect(() => {
@@ -77,6 +107,24 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
       }
     ]);
   }, []);
+  
+  // Handle tool call results, particularly for code insertion
+  const handleToolCallCompleted = useCallback((toolCall: ToolCall) => {
+    // Handle code generation tool calls
+    if (toolCall.type === 'function' && toolCall.name === 'generate_code' && toolCall.result) {
+      // Extract code and language from the result
+      const codeMatch = toolCall.result.match(/```(\w+)?\n([\s\S]*?)\n```/);
+      if (codeMatch && onInsertCode) {
+        const language = codeMatch[1] || 'text';
+        const code = codeMatch[2];
+        
+        // Provide a button or UI element to insert the code
+        // This would typically involve adding a button to the message component
+        // For now, we'll just log that the function exists
+        console.log(`Code can be inserted: ${language}, ${code.substring(0, 20)}...`);
+      }
+    }
+  }, [onInsertCode]);
   
   // Handle sending a message to the agent
   const handleSendMessage = useCallback(async (content: string, context: ContextItem[]) => {
@@ -108,12 +156,24 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
       setMessages(prev => [...prev, assistantMessage]);
       setIsGenerating(true);
       
+      // Add editor-specific context to the request
+      const enhancedContext = context.map(item => {
+        // If this is the current file or selected text
+        if (item.id === 'current-editor-content' || item.id === 'selected-text') {
+          return {
+            ...item,
+            content: item.content || ''
+          };
+        }
+        return item;
+      });
+      
       // Send the message to the agent service for streaming response
       let responseContent = '';
       
-      await agentService.streamResponse({
+      const response = await agentService.streamResponse({
         message: content,
-        context,
+        context: enhancedContext,
         history: messages
       }, (chunk) => {
         // Update the content as chunks come in
@@ -127,15 +187,30 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
         );
       });
       
-      // Update the message with the final complete response
-      // and clear the streaming flag
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === assistantMessageId 
-            ? { ...msg, content: responseContent, isStreaming: false } 
-            : msg
-        )
-      );
+      // Check for any tool calls in the response
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        // Update the message with the tool calls
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? { ...msg, content: responseContent, isStreaming: false, toolCalls: response.toolCalls } 
+              : msg
+          )
+        );
+        
+        // Process the tool calls
+        response.toolCalls.forEach(handleToolCallCompleted);
+      } else {
+        // Update the message with the final complete response
+        // and clear the streaming flag
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? { ...msg, content: responseContent, isStreaming: false } 
+              : msg
+          )
+        );
+      }
       
       setIsGenerating(false);
     } catch (error) {
@@ -159,7 +234,7 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
       
       setIsGenerating(false);
     }
-  }, [messages, isGenerating]);
+  }, [messages, isGenerating, handleToolCallCompleted]);
   
   // Handle clearing the conversation
   const handleClearConversation = useCallback(() => {
@@ -196,6 +271,21 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
     setIsGenerating(false);
   }, []);
   
+  // Function to allow insertion of code from a tool call
+  const insertCodeFromToolCall = useCallback((toolCall: ToolCall) => {
+    if (!onInsertCode) return;
+    
+    // Extract code and language from the result
+    const codeMatch = toolCall.result?.match(/```(\w+)?\n([\s\S]*?)\n```/);
+    if (codeMatch) {
+      const language = codeMatch[1] || 'text';
+      const code = codeMatch[2];
+      
+      // Insert the code into the editor
+      onInsertCode(code, language);
+    }
+  }, [onInsertCode]);
+  
   return (
     <Container>
       <AgentChatPanel
@@ -205,6 +295,8 @@ const AgentContainer: React.FC<AgentContainerProps> = ({
         messages={messages}
         isGenerating={isGenerating}
         availableContext={fileContextItems}
+        onInsertCode={insertCodeFromToolCall}
+        onInsertText={onInsertText}
       />
     </Container>
   );

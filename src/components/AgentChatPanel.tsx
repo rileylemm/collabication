@@ -27,6 +27,7 @@ export interface ContextItem {
   path: string;
   name: string;
   selected: boolean;
+  content?: string;
 }
 
 interface AgentChatPanelProps {
@@ -36,6 +37,8 @@ interface AgentChatPanelProps {
   messages: ChatMessage[];
   isGenerating: boolean;
   availableContext: ContextItem[];
+  onInsertCode?: (toolCall: ToolCall) => void;
+  onInsertText?: (text: string) => void;
 }
 
 // Styled components for the chat interface
@@ -315,6 +318,21 @@ const StopGenerationButton = styled.button`
   }
 `;
 
+const InsertCodeButton = styled.button`
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background-color: ${props => props.theme.colors.primary};
+  color: white;
+  border: none;
+  border-radius: ${props => props.theme.borderRadius.small};
+  font-size: 0.8rem;
+  cursor: pointer;
+  
+  &:hover {
+    background-color: ${props => props.theme.colors.primaryDark || props.theme.colors.primary + '80'};
+  }
+`;
+
 const formatTimestamp = (timestamp: Date): string => {
   return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
@@ -325,7 +343,9 @@ const AgentChatPanel: React.FC<AgentChatPanelProps> = ({
   onStopGeneration,
   messages,
   isGenerating,
-  availableContext
+  availableContext,
+  onInsertCode,
+  onInsertText
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [selectedContext, setSelectedContext] = useState<ContextItem[]>([]);
@@ -375,24 +395,36 @@ const AgentChatPanel: React.FC<AgentChatPanelProps> = ({
   };
 
   const renderToolCalls = (toolCalls: ToolCall[]) => {
-    return toolCalls.map(tool => (
-      <ToolCallContainer key={tool.id}>
-        <ToolCallHeader>
-          <ToolCallName>{tool.name}</ToolCallName>
-          <ToolCallStatus status={tool.status}>
-            {tool.status}
-          </ToolCallStatus>
-        </ToolCallHeader>
-        <ToolCallContent>
-          {JSON.stringify(tool.args, null, 2)}
-        </ToolCallContent>
-        {tool.result && (
-          <ToolCallResult>
-            {tool.result}
-          </ToolCallResult>
-        )}
-      </ToolCallContainer>
-    ));
+    return (
+      <>
+        {toolCalls.map((toolCall) => (
+          <ToolCallContainer key={toolCall.id}>
+            <ToolCallHeader>
+              <ToolCallName>{toolCall.name}</ToolCallName>
+              <ToolCallStatus status={toolCall.status}>
+                {toolCall.status}
+              </ToolCallStatus>
+            </ToolCallHeader>
+            
+            {toolCall.result && (
+              <ToolCallResult>
+                {toolCall.result}
+                
+                {toolCall.type === 'function' && 
+                 toolCall.name === 'generate_code' && 
+                 onInsertCode && (
+                  <InsertCodeButton 
+                    onClick={() => onInsertCode(toolCall)}
+                  >
+                    Insert Code into Editor
+                  </InsertCodeButton>
+                )}
+              </ToolCallResult>
+            )}
+          </ToolCallContainer>
+        ))}
+      </>
+    );
   };
 
   return (

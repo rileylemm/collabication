@@ -11,6 +11,8 @@ import CodeEditor from '../components/CodeEditor';
 import { CodeEditorRef } from '../components/CodeEditor';
 import SearchPanel from '../components/SearchPanel';
 import UnifiedSearchPanel from '../components/UnifiedSearchPanel';
+import KeyboardShortcutsPanel from '../components/KeyboardShortcutsPanel';
+import { useShortcut } from '../contexts/KeyboardShortcutsContext';
 import { 
   getFileExtension, 
   isTextFile, 
@@ -894,50 +896,6 @@ const EditorPage: React.FC = () => {
     }
   }, []);
 
-  // Set up keyboard shortcut handling
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for undo: Ctrl+Z or Cmd+Z
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-      }
-      
-      // Check for redo: Ctrl+Y or Cmd+Shift+Z
-      if (((e.ctrlKey || e.metaKey) && e.key === 'y') || 
-          ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')) {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
-    
-    // Add event listener
-    document.addEventListener('keydown', handleKeyDown);
-    
-    // Cleanup
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
-
-  // Update undo/redo state whenever editor changes
-  useEffect(() => {
-    if (editorRef.current) {
-      updateUndoRedoState();
-      
-      // Also update when the editor content changes
-      const updateListener = () => {
-        updateUndoRedoState();
-      };
-      
-      editorRef.current.on('transaction', updateListener);
-      
-      return () => {
-        editorRef.current?.off('transaction', updateListener);
-      };
-    }
-  }, [editorRef.current, updateUndoRedoState]);
-
   // Toggle search panel
   const toggleSearchPanel = useCallback(() => {
     setShowSearchPanel(prev => !prev);
@@ -958,38 +916,41 @@ const EditorPage: React.FC = () => {
     setShowUnifiedSearchPanel(prev => !prev);
   }, []);
   
-  // Keyboard shortcut handler (update the existing one)
+  // Add state for showing keyboard shortcuts panel
+  const [showKeyboardShortcutsPanel, setShowKeyboardShortcutsPanel] = useState<boolean>(false);
+  
+  // Handle keyboard shortcut actions
+  const handleOpenKeyboardShortcuts = useCallback(() => {
+    setShowKeyboardShortcutsPanel(true);
+  }, []);
+  
+  // Register keyboard shortcuts using the new system
+  useShortcut('search_file', () => toggleSearchPanel());
+  useShortcut('search_all', () => toggleUnifiedSearchPanel());
+  useShortcut('undo', () => handleUndo());
+  useShortcut('redo', () => handleRedo());
+  useShortcut('toggle_bold', () => handleBoldClick());
+  useShortcut('toggle_italic', () => handleItalicClick());
+  useShortcut('toggle_code', () => handleCodeClick());
+  useShortcut('toggle_link', () => handleLinkClick());
+  useShortcut('save', () => handleSave && handleSave());
+  useShortcut('toggle_minimap', () => toggleMinimap());
+  useShortcut('toggle_agent_panel', () => toggleAgentPanel());
+  useShortcut('toggle_diff_view', () => toggleDiffView());
+  useShortcut('toggle_version_control', () => toggleVersionControl());
+  
+  // Show keyboard shortcuts panel with ? key (custom shortcut not in registry)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+F or Cmd+F to toggle search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && !e.shiftKey) {
+      if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
         e.preventDefault();
-        toggleSearchPanel();
-      }
-      
-      // Ctrl+Shift+F or Cmd+Shift+F to toggle unified search
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'f') {
-        e.preventDefault();
-        toggleUnifiedSearchPanel();
-      }
-      
-      // Ctrl+Z or Cmd+Z for undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-      }
-      
-      // Ctrl+Shift+Z or Cmd+Shift+Z or Cmd+Y for redo
-      if (((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) || 
-          ((e.ctrlKey || e.metaKey) && e.key === 'y')) {
-        e.preventDefault();
-        handleRedo();
+        handleOpenKeyboardShortcuts();
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, toggleSearchPanel, toggleUnifiedSearchPanel]);
+  }, [handleOpenKeyboardShortcuts]);
 
   // Handle editor ready callback
   const handleEditorReady = useCallback((ref: CodeEditorRef) => {
@@ -1960,6 +1921,11 @@ const EditorPage: React.FC = () => {
             isVisible={showUnifiedSearchPanel}
             onClose={() => setShowUnifiedSearchPanel(false)}
             defaultRepository={repoName}
+          />
+          
+          <KeyboardShortcutsPanel
+            isVisible={showKeyboardShortcutsPanel}
+            onClose={() => setShowKeyboardShortcutsPanel(false)}
           />
         </EditorContent>
 

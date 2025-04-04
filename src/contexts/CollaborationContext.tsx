@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import collaborationService, { UserAwarenessData, NetworkStatus } from '../services/collaborationService';
+import collaborationService, { UserAwarenessData, NetworkStatus, Permission, PermissionRole } from '../services/collaborationService';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 
@@ -16,6 +16,10 @@ interface CollaborationContextType {
   connectedUsers: UserAwarenessData[];
   documentsWithOfflineChanges: string[];
   
+  // Permissions
+  documentPermissions: Permission[];
+  currentUserPermission: Permission | null;
+  
   // Actions
   connectToDocument: (documentId: string, initialContent?: string) => Promise<void>;
   disconnectFromDocument: () => void;
@@ -24,6 +28,16 @@ interface CollaborationContextType {
   getYText: (documentId: string) => Y.Text;
   updateDocumentMetadata: (metadata: Record<string, any>) => void;
   getDocumentOfflineStatus: (documentId: string) => { hasPendingChanges: boolean, timestamp?: number };
+  
+  // Permission methods
+  hasPermission: (requiredRole: PermissionRole) => boolean;
+  isOwner: () => boolean;
+  canEdit: () => boolean;
+  canView: () => boolean;
+  getDocumentPermissions: () => Permission[];
+  setUserPermission: (userPermission: Permission) => boolean;
+  removeUserPermission: (userId: string) => boolean;
+  transferOwnership: (newOwnerId: string) => boolean;
 }
 
 // Default context value
@@ -35,6 +49,8 @@ const defaultContextValue: CollaborationContextType = {
   currentDocumentId: null,
   connectedUsers: [],
   documentsWithOfflineChanges: [],
+  documentPermissions: [],
+  currentUserPermission: null,
   connectToDocument: async () => {},
   disconnectFromDocument: () => {},
   updateUserInfo: () => {},
@@ -42,6 +58,14 @@ const defaultContextValue: CollaborationContextType = {
   getYText: () => new Y.Doc().getText('content'),
   updateDocumentMetadata: () => {},
   getDocumentOfflineStatus: () => ({ hasPendingChanges: false }),
+  hasPermission: () => false,
+  isOwner: () => false,
+  canEdit: () => false,
+  canView: () => false,
+  getDocumentPermissions: () => [],
+  setUserPermission: () => false,
+  removeUserPermission: () => false,
+  transferOwnership: () => false,
 };
 
 // Create the context
@@ -64,6 +88,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<UserAwarenessData[]>([]);
   const [documentsWithOfflineChanges, setDocumentsWithOfflineChanges] = useState<string[]>([]);
+  
+  // Permissions state
+  const [documentPermissions, setDocumentPermissions] = useState<Permission[]>([]);
+  const [currentUserPermission, setCurrentUserPermission] = useState<Permission | null>(null);
 
   // Refs to store provider information for cleanup
   const providerRef = useRef<WebsocketProvider | null>(null);
@@ -72,11 +100,13 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     onConnectionError: ((error: Error) => void) | null;
     onAwarenessChange: (() => void) | null;
     onNetworkStatusChange: ((status: NetworkStatus) => void) | null;
+    onPermissionsChange: ((data: any) => void) | null;
   }>({
     onStatusChange: null,
     onConnectionError: null,
     onAwarenessChange: null,
     onNetworkStatusChange: null,
+    onPermissionsChange: null,
   });
 
   // Initialize the collaboration service
@@ -110,18 +140,34 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     });
     
-    // Store the handler for cleanup
+    // Set up permissions change listener
+    const unregisterPermissionsListener = collaborationService.onPermissionsChange((data) => {
+      console.log(`Permissions updated for document ${data.documentId}`);
+      
+      // Only update if it's the current document
+      if (data.documentId === currentDocumentId) {
+        setDocumentPermissions(data.permissions);
+        
+        // Update current user's permission
+        if (currentDocumentId) {
+          const userPermission = collaborationService.getCurrentUserPermission(currentDocumentId);
+          setCurrentUserPermission(userPermission);
+        }
+      }
+    });
+    
+    // Store the handlers for cleanup
     eventHandlersRef.current.onNetworkStatusChange = unregisterNetworkListener;
+    eventHandlersRef.current.onPermissionsChange = unregisterPermissionsListener;
     
     // Initial check for offline changes
     setDocumentsWithOfflineChanges(collaborationService.getDocumentsWithOfflineChanges());
 
     return () => {
-      if (eventHandlersRef.current.onNetworkStatusChange) {
-        unregisterNetworkListener();
-      }
+      unregisterNetworkListener();
+      unregisterPermissionsListener();
     };
-  }, []);
+  }, [currentDocumentId]);
 
   // Function to set up event listeners
   const setupEventListeners = useCallback((provider: WebsocketProvider) => {
@@ -201,7 +247,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       awareness.off('change', handlers.onAwarenessChange);
     }
     
-    // Reset refs (except network status handler)
+    // Reset refs (except network status handler and permissions handler)
     providerRef.current = null;
     eventHandlersRef.current = {
       ...eventHandlersRef.current,
@@ -232,6 +278,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       // Set the current document ID
       setCurrentDocumentId(documentId);
       
+      // Get document permissions
+      const permissions = collaborationService.getDocumentPermissions(documentId);
+      setDocumentPermissions(permissions);
+      
+      // Get current user's permission
+      const userPermission = collaborationService.getCurrentUserPermission(documentId);
+      setCurrentUserPermission(userPermission);
+      
       // Check if we have offline changes for this document
       if (documentsWithOfflineChanges.includes(documentId)) {
         console.log(`Document ${documentId} has offline changes that will be synced`);
@@ -256,6 +310,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       setCurrentDocumentId(null);
       setIsConnected(false);
       setConnectedUsers([]);
+      setDocumentPermissions([]);
+      setCurrentUserPermission(null);
     }
   }, [currentDocumentId, cleanupEventListeners]);
 
@@ -287,6 +343,54 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const getDocumentOfflineStatus = useCallback((documentId: string) => {
     return collaborationService.getDocumentOfflineStatus(documentId);
   }, []);
+
+  // Check if the current user has a specific permission
+  const hasPermission = useCallback((requiredRole: PermissionRole): boolean => {
+    if (!currentDocumentId) return false;
+    return collaborationService.hasPermission(currentDocumentId, requiredRole);
+  }, [currentDocumentId]);
+
+  // Check if the current user is the owner
+  const isOwner = useCallback((): boolean => {
+    if (!currentDocumentId) return false;
+    return collaborationService.isOwner(currentDocumentId);
+  }, [currentDocumentId]);
+
+  // Check if the current user can edit
+  const canEdit = useCallback((): boolean => {
+    if (!currentDocumentId) return false;
+    return collaborationService.canEdit(currentDocumentId);
+  }, [currentDocumentId]);
+
+  // Check if the current user can view
+  const canView = useCallback((): boolean => {
+    if (!currentDocumentId) return false;
+    return collaborationService.canView(currentDocumentId);
+  }, [currentDocumentId]);
+
+  // Get all permissions for the current document
+  const getDocumentPermissions = useCallback((): Permission[] => {
+    if (!currentDocumentId) return [];
+    return collaborationService.getDocumentPermissions(currentDocumentId);
+  }, [currentDocumentId]);
+
+  // Set a user's permission
+  const setUserPermission = useCallback((userPermission: Permission): boolean => {
+    if (!currentDocumentId) return false;
+    return collaborationService.setUserPermission(currentDocumentId, userPermission);
+  }, [currentDocumentId]);
+
+  // Remove a user's permission
+  const removeUserPermission = useCallback((userId: string): boolean => {
+    if (!currentDocumentId) return false;
+    return collaborationService.removeUserPermission(currentDocumentId, userId);
+  }, [currentDocumentId]);
+
+  // Transfer document ownership
+  const transferOwnership = useCallback((newOwnerId: string): boolean => {
+    if (!currentDocumentId) return false;
+    return collaborationService.transferOwnership(currentDocumentId, newOwnerId);
+  }, [currentDocumentId]);
 
   // Update offline changes list periodically
   useEffect(() => {
@@ -321,6 +425,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     currentDocumentId,
     connectedUsers,
     documentsWithOfflineChanges,
+    documentPermissions,
+    currentUserPermission,
     connectToDocument,
     disconnectFromDocument,
     updateUserInfo,
@@ -328,6 +434,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     getYText,
     updateDocumentMetadata,
     getDocumentOfflineStatus,
+    hasPermission,
+    isOwner,
+    canEdit,
+    canView,
+    getDocumentPermissions,
+    setUserPermission,
+    removeUserPermission,
+    transferOwnership,
   };
 
   return (
