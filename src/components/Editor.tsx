@@ -36,6 +36,7 @@ interface EditorProps {
   isMarkdownMode?: boolean;
   placeholder?: string;
   onEditorReady?: (editor: TiptapEditor | null) => void;
+  readOnly?: boolean;
 }
 
 const EditorContainer = styled.div<{ isMarkdownMode: boolean }>`
@@ -188,7 +189,8 @@ const Editor: React.FC<EditorProps> = ({
   onChangeMarkdown,
   isMarkdownMode = false,
   placeholder = 'Start typing here...',
-  onEditorReady
+  onEditorReady,
+  readOnly
 }) => {
   const editor = useEditor({
     extensions: [

@@ -61,6 +61,8 @@ interface CodeEditorProps {
     name: string;
     color: string;
   };
+  // Add readOnly prop
+  readOnly?: boolean;
 }
 
 const EditorContainer = styled.div`
@@ -188,7 +190,8 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
   documentId,
   ydoc,
   wsProvider,
-  user
+  user,
+  readOnly
 }, ref) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -363,7 +366,7 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
       // Add collaboration extensions
       extensions.push(
         // CodeMirror Yjs binding
-        yCollab(ytext, wsProvider.awareness, { undoManager: true }),
+        yCollab(ytext, wsProvider.awareness, { undoManager: new Y.UndoManager(ytext) }),
         
         // Update listener
         EditorView.updateListener.of(update => {
@@ -427,6 +430,11 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
     // Add fold gutter
     extensions.push(foldGutter(foldGutterConfig));
 
+    // Add readOnly extension if required
+    if (readOnly) {
+      extensions.push(EditorState.readOnly.of(true));
+    }
+
     const initDoc = isCollaborative && ytext ? '' : code;
     
     const state = EditorState.create({
@@ -439,7 +447,7 @@ const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(({
     return () => {
       setEditorState(null);
     };
-  }, [code, language, darkMode, onChange, isCollaborative, ytext, wsProvider, user]);
+  }, [code, language, darkMode, onChange, isCollaborative, ytext, wsProvider, user, readOnly]);
 
   // Create or update the editor view when the state changes
   useEffect(() => {

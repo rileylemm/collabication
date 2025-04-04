@@ -6,8 +6,10 @@ import CodeEditor, { CodeEditorRef } from './CodeEditor';
 import { useTheme } from '../contexts/ThemeContext';
 import { getFileType, getCodeLanguage } from '../utils/fileUtils';
 import { useCollaboration } from '../contexts/CollaborationContext';
+import collaborationService from '../services/collaborationService';
 import * as Y from 'yjs';
 import { getExtensions } from './DocumentEditorExtensions';
+import { FaEye, FaEdit, FaCrown } from 'react-icons/fa';
 
 // Export public interface for DocumentEditor
 export interface DocumentEditorRef {
@@ -130,21 +132,37 @@ const CollaborationInfo = styled.div`
 `;
 
 const UserBadge = styled.div`
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 12px;
   font-weight: bold;
+  font-size: 12px;
+  margin-right: 5px;
+`;
+
+const PermissionIndicator = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: ${props => props.theme.colors.textSecondary};
+  background-color: ${props => props.theme.colors.background}80;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
 `;
 
 const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props, ref) => {
   const {
     filename,
-    content,
+    content: initialContent,
     onChange,
     onEditorReady,
     isMarkdownMode = false,
@@ -164,6 +182,7 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
   const codeEditorRef = useRef<CodeEditorRef | null>(null);
   const tiptapEditorRef = useRef<TiptapEditor | null>(null);
   const [isCollaborating, setIsCollaborating] = useState(false);
+  const [content, setContent] = useState(initialValue);
   
   // Get the collaboration context
   const {
@@ -172,7 +191,9 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
     getYDoc,
     updateUserInfo,
     getYText,
-    connectedUsers
+    connectedUsers,
+    canEdit,
+    isOwner
   } = useCollaboration();
 
   // Get the user information from localStorage
@@ -200,7 +221,7 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
 
   // Get or create the Yjs document
   const getOrCreateYjsDoc = useCallback(() => {
-    if (!documentId) return null;
+    if (!documentId) return undefined;
     
     try {
       const doc = getYDoc(documentId);
@@ -217,9 +238,20 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
       return doc;
     } catch (error) {
       console.error('Error getting Yjs document:', error);
-      return null;
+      return undefined;
     }
   }, [documentId, getYDoc, initialValue]);
+
+  // Determine if this document should be in read-only mode based on permissions
+  const hasEditPermission = documentId ? canEdit() : true;
+  const hasOwnerPermission = documentId ? isOwner() : true;
+  const isReadOnly = readOnly || (isConnected && !hasEditPermission);
+
+  // Get permission level for display
+  const permissionLevel = !isConnected ? 'local' 
+    : hasOwnerPermission ? 'owner'
+    : hasEditPermission ? 'editor'
+    : 'viewer';
 
   // Set up the editor with Yjs integration if needed
   const editor = useEditor(
@@ -230,7 +262,7 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
         user: isConnected ? getUserInfo() : undefined
       }),
       content: initialValue,
-      editable: !readOnly,
+      editable: !isReadOnly,
       onUpdate: ({ editor }) => {
         const html = editor.getHTML();
         setContent(html);
@@ -238,15 +270,15 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
       },
       onTransaction: () => {
         // Update undo/redo state
-        if (onCanUndoChange) {
+        if (editor && onCanUndoChange) {
           onCanUndoChange(editor.can().undo());
         }
-        if (onCanRedoChange) {
+        if (editor && onCanRedoChange) {
           onCanRedoChange(editor.can().redo());
         }
       },
     },
-    [isConnected, documentId, readOnly]
+    [isConnected, documentId, isReadOnly]
   );
 
   // Connect to the collaboration server when the component mounts
@@ -258,10 +290,10 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
       updateUserInfo({
         name: userInfo.name,
         color: userInfo.color,
-        cursor: {
-          anchor: editor.state.selection.anchor,
-          head: editor.state.selection.head
-        }
+        position: editor ? {
+          from: editor.state.selection.anchor,
+          to: editor.state.selection.head
+        } : undefined
       });
       
       setIsCollaborating(true);
@@ -274,9 +306,9 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
     
     const updateCursorPosition = () => {
       updateUserInfo({
-        cursor: {
-          anchor: editor.state.selection.anchor,
-          head: editor.state.selection.head
+        position: {
+          from: editor.state.selection.anchor,
+          to: editor.state.selection.head
         }
       });
     };
@@ -394,6 +426,16 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
         {editorType === 'text' ? 'Text Document' : `Code (${language})`}
       </FileTypeIndicator>
       
+      {/* Add permission indicator for collaborative documents */}
+      {isConnected && documentId && (
+        <PermissionIndicator>
+          {permissionLevel === 'owner' && <FaCrown color="#FFD700" />}
+          {permissionLevel === 'editor' && <FaEdit color="#4CAF50" />}
+          {permissionLevel === 'viewer' && <FaEye color="#2196F3" />}
+          <span>{permissionLevel}</span>
+        </PermissionIndicator>
+      )}
+      
       {editorType === 'text' ? (
         <Editor
           content={content}
@@ -401,6 +443,7 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
           onEditorReady={handleTiptapEditorReady}
           isMarkdownMode={isMarkdownMode}
           placeholder="Start typing here..."
+          readOnly={isReadOnly}
         />
       ) : (
         <CodeEditor
@@ -410,6 +453,14 @@ const DocumentEditor = forwardRef<DocumentEditorRef, DocumentEditorProps>((props
           onChange={onChange}
           darkMode={theme === 'dark'}
           onReady={handleCodeEditorReady}
+          isCollaborative={isConnected && !!documentId}
+          documentId={documentId}
+          ydoc={documentId && isConnected ? getYDoc(documentId!) : undefined}
+          wsProvider={documentId && isConnected ? 
+            collaborationService.connect(documentId) : 
+            undefined}
+          user={getUserInfo()}
+          readOnly={isReadOnly}
         />
       )}
       {isConnected && connectedUsers.length > 0 && (
