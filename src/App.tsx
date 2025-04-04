@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import { ThemeProvider as StyledThemeProvider } from 'styled-components';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { darkTheme, lightTheme, Theme } from './styles/theme';
 import GlobalStyle from './styles/GlobalStyle';
 import Layout from './components/Layout';
@@ -34,13 +35,15 @@ const AppContent = () => {
 
 const App: React.FC = () => {
   return (
-    <ThemeProvider>
-      <GitHubProvider>
-        <Router>
-          <AppContent />
-        </Router>
-      </GitHubProvider>
-    </ThemeProvider>
+    <SettingsProvider>
+      <ThemeProvider>
+        <GitHubProvider>
+          <Router>
+            <AppContent />
+          </Router>
+        </GitHubProvider>
+      </ThemeProvider>
+    </SettingsProvider>
   );
 };
 

@@ -11,6 +11,7 @@ import VersionControlPanel from '../components/VersionControlPanel';
 import PullRequestPanel from '../components/PullRequestPanel';
 import { BiGitBranch, BiHistory, BiGitPullRequest, BiFolder, BiCog, BiGroup, BiInfoCircle } from 'react-icons/bi';
 import { AiOutlineHome, AiOutlineSetting } from 'react-icons/ai';
+import SettingsPanel from '../components/SettingsPanel';
 
 // Page layout components
 const PageContainer = styled.div`
@@ -415,36 +416,6 @@ const TeamManagement: React.FC<{ repositoryName: string }> = ({ repositoryName }
   );
 };
 
-const ProjectSettings: React.FC<{ repositoryName: string }> = ({ repositoryName }) => {
-  return (
-    <SettingsContainer>
-      <SettingsSection>
-        <SectionTitle>General Settings</SectionTitle>
-        <p>Configure general settings for repository: {repositoryName}</p>
-        {/* Settings controls would go here */}
-      </SettingsSection>
-      
-      <SettingsSection>
-        <SectionTitle>Collaboration Settings</SectionTitle>
-        <p>Configure collaboration settings for this project</p>
-        {/* Collaboration settings controls would go here */}
-      </SettingsSection>
-      
-      <SettingsSection>
-        <SectionTitle>GitHub Integration</SectionTitle>
-        <p>Configure GitHub integration settings</p>
-        {/* GitHub settings controls would go here */}
-      </SettingsSection>
-      
-      <SettingsSection>
-        <SectionTitle>Editor Preferences</SectionTitle>
-        <p>Configure editor preferences</p>
-        {/* Editor preferences controls would go here */}
-      </SettingsSection>
-    </SettingsContainer>
-  );
-};
-
 const ProjectInfo: React.FC<{ repositoryName: string }> = ({ repositoryName }) => {
   return (
     <div>
@@ -610,7 +581,7 @@ const ProjectManagementPage: React.FC = () => {
       case NavigationSection.TEAM:
         return <TeamManagement repositoryName={selectedRepository} />;
       case NavigationSection.SETTINGS:
-        return <ProjectSettings repositoryName={selectedRepository} />;
+        return <SettingsPanel />;
       case NavigationSection.INFO:
         return <ProjectInfo repositoryName={selectedRepository} />;
       default:

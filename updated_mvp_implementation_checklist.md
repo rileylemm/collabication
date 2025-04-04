@@ -269,8 +269,8 @@ Based on code review, the project has the following status:
   - [x] Add collaboration UI elements
 - [x] Implement file type switching with state preservation
 - [x] Create unified project management interface
-- [ ] Add settings synchronization across components
-- [ ] Implement unified search across all content
+- [x] Add settings synchronization across components
+- [x] Implement unified search across all content
 - [ ] Create consistent keyboard shortcuts across features
 
 ### 13. Deployment and Packaging

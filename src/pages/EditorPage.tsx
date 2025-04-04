@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import CodeEditor from '../components/CodeEditor';
 import { CodeEditorRef } from '../components/CodeEditor';
 import SearchPanel from '../components/SearchPanel';
+import UnifiedSearchPanel from '../components/UnifiedSearchPanel';
 import { 
   getFileExtension, 
   isTextFile, 
@@ -949,13 +950,27 @@ const EditorPage: React.FC = () => {
     }
   }, [showSearchPanel]);
 
-  // Keyboard shortcut handler
+  // Add state for unified search panel visibility
+  const [showUnifiedSearchPanel, setShowUnifiedSearchPanel] = useState<boolean>(false);
+  
+  // Toggle unified search panel
+  const toggleUnifiedSearchPanel = useCallback(() => {
+    setShowUnifiedSearchPanel(prev => !prev);
+  }, []);
+  
+  // Keyboard shortcut handler (update the existing one)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+F or Cmd+F to toggle search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && !e.shiftKey) {
         e.preventDefault();
         toggleSearchPanel();
+      }
+      
+      // Ctrl+Shift+F or Cmd+Shift+F to toggle unified search
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'f') {
+        e.preventDefault();
+        toggleUnifiedSearchPanel();
       }
       
       // Ctrl+Z or Cmd+Z for undo
@@ -974,7 +989,7 @@ const EditorPage: React.FC = () => {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, toggleSearchPanel]);
+  }, [handleUndo, handleRedo, toggleSearchPanel, toggleUnifiedSearchPanel]);
 
   // Handle editor ready callback
   const handleEditorReady = useCallback((ref: CodeEditorRef) => {
@@ -1939,10 +1954,12 @@ const EditorPage: React.FC = () => {
             isVisible={showSearchPanel}
             onSearch={handleSearch}
             onClose={handleCloseSearch}
-            onNext={codeEditorRef.current?.openSearch}
-            onPrevious={codeEditorRef.current?.openSearch}
-            onReplace={undefined}
-            onReplaceAll={undefined}
+          />
+          
+          <UnifiedSearchPanel
+            isVisible={showUnifiedSearchPanel}
+            onClose={() => setShowUnifiedSearchPanel(false)}
+            defaultRepository={repoName}
           />
         </EditorContent>
 
