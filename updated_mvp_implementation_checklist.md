@@ -262,7 +262,7 @@ Based on code review, the project has the following status:
   - [X] Add context sharing between editor and agent
   - [X] Implement in-editor agent assistance
 - [ ] Integrate GitHub synchronization with editor
-  - [ ] Add version control UI in the editor
+  - [X] Add version control UI in the editor
   - [X] Implement save-to-GitHub functionality
 - [x] Connect real-time collaboration with editor
   - [x] Integrate Yjs with the editor components

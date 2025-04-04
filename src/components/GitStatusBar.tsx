@@ -13,10 +13,11 @@ interface GitStatusBarProps {
   isCommitting: boolean;
   isPushing: boolean;
   isPulling: boolean;
+  isEmbedded?: boolean;
 }
 
-const StatusBarContainer = styled.div`
-  border-top: 1px solid ${props => props.theme.colors.border};
+const StatusBarContainer = styled.div<{ isEmbedded?: boolean }>`
+  border-top: ${props => props.isEmbedded ? 'none' : `1px solid ${props.theme.colors.border}`};
   background-color: ${props => props.theme.colors.surface};
   padding: 8px;
 `;
@@ -153,6 +154,7 @@ const GitStatusBar: React.FC<GitStatusBarProps> = ({
   isCommitting,
   isPushing,
   isPulling,
+  isEmbedded = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [allStaged, setAllStaged] = useState(false);
@@ -173,7 +175,7 @@ const GitStatusBar: React.FC<GitStatusBarProps> = ({
   const unstagedFiles = modifiedFiles.filter(file => !file.staged);
 
   return (
-    <StatusBarContainer>
+    <StatusBarContainer isEmbedded={isEmbedded}>
       <FlexContainer>
         <ButtonGroup>
           <Button onClick={toggleOpen}>
