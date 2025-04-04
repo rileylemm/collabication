@@ -326,7 +326,7 @@ Based on code review, the project has the following status:
 - [ ] Implement in-app help system
 - [x] Create an installation guide
 - [x] Create update documentation
-- [ ] Create user guides
+- [x] Create user guides
 - [ ] API documentation
 
 ## Performance Requirements
