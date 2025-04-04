@@ -1,33 +1,226 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { githubService } from '../services/githubService';
-import { 
-  Box, 
-  Button, 
-  Select, 
-  Input, 
-  FormControl,
-  FormLabel,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalBody,
-  ModalCloseButton,
-  useDisclosure,
-  Text,
-  Flex,
-  IconButton,
-  Tooltip,
-  useToast
-} from '@chakra-ui/react';
 import { BiGitBranch, BiPlus, BiTrash, BiRefresh } from 'react-icons/bi';
+import { Theme } from '../styles/theme';
 
 interface BranchManagerProps {
   repositoryName: string;
   onBranchChange?: (branchName: string) => void;
 }
+
+// Declare module for styled-components to use our Theme
+declare module 'styled-components' {
+  export interface DefaultTheme extends Theme {}
+}
+
+// Custom styled components to replace Chakra UI
+const Box = styled.div``;
+
+const Button = styled.button<{ $variant?: string; $colorScheme?: string; $isDisabled?: boolean; $isLoading?: boolean }>`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  border-radius: ${props => props.theme.borderRadius.small};
+  cursor: ${props => props.$isDisabled ? 'not-allowed' : 'pointer'};
+  opacity: ${props => props.$isDisabled || props.$isLoading ? 0.6 : 1};
+  background-color: ${props => {
+    if (props.$variant === 'outline') return 'transparent';
+    if (props.$colorScheme === 'blue') return props.theme.colors.primary;
+    if (props.$colorScheme === 'red') return props.theme.colors.error;
+    return props.theme.colors.surface;
+  }};
+  color: ${props => {
+    if (props.$variant === 'outline') {
+      if (props.$colorScheme === 'blue') return props.theme.colors.primary;
+      if (props.$colorScheme === 'red') return props.theme.colors.error;
+      return props.theme.colors.text;
+    }
+    return props.theme.colors.textOnPrimary;
+  }};
+  border: 1px solid ${props => {
+    if (props.$variant === 'outline') {
+      if (props.$colorScheme === 'blue') return props.theme.colors.primary;
+      if (props.$colorScheme === 'red') return props.theme.colors.error;
+      return props.theme.colors.border;
+    }
+    return 'transparent';
+  }};
+  margin-right: ${props => props.style?.marginRight || 0};
+  
+  &:hover {
+    opacity: 0.8;
+  }
+  
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  
+  svg {
+    margin-right: 0.5rem;
+  }
+`;
+
+const IconButton = styled.button<{ $isLoading?: boolean }>`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: ${props => props.theme.borderRadius.small};
+  background-color: transparent;
+  border: 1px solid ${props => props.theme.colors.border};
+  cursor: pointer;
+  margin-right: ${props => props.style?.marginRight || 0};
+  color: ${props => props.theme.colors.text};
+  
+  &:hover {
+    background-color: ${props => props.theme.colors.backgroundHover};
+  }
+  
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+`;
+
+const Select = styled.select`
+  padding: 0.5rem;
+  border-radius: ${props => props.theme.borderRadius.small};
+  border: 1px solid ${props => props.theme.colors.border};
+  background-color: ${props => props.theme.colors.inputBackground};
+  color: ${props => props.theme.colors.text};
+  font-size: 0.875rem;
+  margin-right: 0.5rem;
+  flex: 1;
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`;
+
+const Input = styled.input`
+  padding: 0.5rem;
+  border-radius: ${props => props.theme.borderRadius.small};
+  border: 1px solid ${props => props.theme.colors.border};
+  background-color: ${props => props.theme.colors.inputBackground};
+  color: ${props => props.theme.colors.text};
+  width: 100%;
+  
+  &:focus {
+    outline: none;
+    border-color: ${props => props.theme.colors.primary};
+  }
+`;
+
+const Text = styled.p<{ $fontWeight?: string }>`
+  margin: 0;
+  color: ${props => props.theme.colors.text};
+  font-weight: ${props => props.$fontWeight === 'bold' ? 'bold' : 'normal'};
+  margin-bottom: ${props => props.style?.marginBottom ? `${props.style.marginBottom}px` : '0'};
+`;
+
+const Flex = styled.div<{ $justify?: string; $align?: string }>`
+  display: flex;
+  justify-content: ${props => props.$justify || 'flex-start'};
+  align-items: ${props => props.$align || 'flex-start'};
+  margin-bottom: ${props => props.style?.marginBottom ? `${props.style.marginBottom}px` : '0'};
+`;
+
+const Modal = styled.div<{ $isOpen: boolean }>`
+  display: ${props => props.$isOpen ? 'block' : 'none'};
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+`;
+
+const ModalOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+`;
+
+const ModalContent = styled.div`
+  position: relative;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: ${props => props.theme.colors.background};
+  padding: 1rem;
+  border-radius: ${props => props.theme.borderRadius.medium};
+  max-width: 500px;
+  width: 90%;
+  z-index: 1001;
+  box-shadow: ${props => props.theme.boxShadow.large};
+`;
+
+const ModalHeader = styled.div`
+  font-weight: bold;
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid ${props => props.theme.colors.border};
+  color: ${props => props.theme.colors.text};
+`;
+
+const ModalBody = styled.div`
+  margin-bottom: 1rem;
+`;
+
+const ModalFooter = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  border-top: 1px solid ${props => props.theme.colors.border};
+`;
+
+const FormControl = styled.div`
+  margin-bottom: 1rem;
+`;
+
+const FormLabel = styled.label`
+  display: block;
+  margin-bottom: 0.5rem;
+  color: ${props => props.theme.colors.text};
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: ${props => props.theme.colors.textSecondary};
+  
+  &:hover {
+    color: ${props => props.theme.colors.text};
+  }
+`;
+
+const useCustomDisclosure = () => {
+  const [open, setOpen] = useState(false);
+  
+  return {
+    open,
+    onOpen: () => setOpen(true),
+    onClose: () => setOpen(false),
+    onToggle: () => setOpen(!open),
+    setOpen
+  };
+};
 
 const BranchContainer = styled(Box)`
   padding: 16px;
@@ -42,8 +235,28 @@ const BranchManager: React.FC<BranchManagerProps> = ({
   const [currentBranch, setCurrentBranch] = useState<string>('');
   const [newBranchName, setNewBranchName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const { isOpen, onOpen, onClose } = useDisclosure();
-  const toast = useToast();
+  const disclosure = useCustomDisclosure();
+  
+  // Toast-like message state
+  const [toastMessage, setToastMessage] = useState<{
+    title: string;
+    description: string;
+    status: 'success' | 'error' | 'info';
+    visible: boolean;
+  } | null>(null);
+  
+  const showToast = (title: string, description: string, status: 'success' | 'error' | 'info') => {
+    setToastMessage({
+      title,
+      description,
+      status,
+      visible: true
+    });
+    
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 5000);
+  };
 
   // Load branches
   const loadBranches = async () => {
@@ -60,13 +273,7 @@ const BranchManager: React.FC<BranchManagerProps> = ({
       setCurrentBranch(current);
     } catch (error) {
       console.error('Error loading branches:', error);
-      toast({
-        title: 'Error loading branches',
-        description: String(error),
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      showToast('Error loading branches', String(error), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -89,22 +296,10 @@ const BranchManager: React.FC<BranchManagerProps> = ({
       if (onBranchChange) {
         onBranchChange(branchName);
       }
-      toast({
-        title: 'Branch changed',
-        description: `Switched to branch: ${branchName}`,
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
+      showToast('Branch changed', `Switched to branch: ${branchName}`, 'success');
     } catch (error) {
       console.error('Error changing branch:', error);
-      toast({
-        title: 'Error changing branch',
-        description: String(error),
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      showToast('Error changing branch', String(error), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -113,20 +308,14 @@ const BranchManager: React.FC<BranchManagerProps> = ({
   // Create a new branch
   const handleCreateBranch = async () => {
     if (!newBranchName.trim()) {
-      toast({
-        title: 'Error creating branch',
-        description: 'Branch name cannot be empty',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
+      showToast('Error creating branch', 'Branch name cannot be empty', 'error');
       return;
     }
     
     try {
       setIsLoading(true);
       await githubService.createBranch(repositoryName, newBranchName, true);
-      onClose();
+      disclosure.onClose();
       setNewBranchName('');
       
       // Refresh branch list
@@ -137,22 +326,10 @@ const BranchManager: React.FC<BranchManagerProps> = ({
         onBranchChange(newBranchName);
       }
       
-      toast({
-        title: 'Branch created',
-        description: `Created and switched to branch: ${newBranchName}`,
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
+      showToast('Branch created', `Created and switched to branch: ${newBranchName}`, 'success');
     } catch (error) {
       console.error('Error creating branch:', error);
-      toast({
-        title: 'Error creating branch',
-        description: String(error),
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      showToast('Error creating branch', String(error), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -161,13 +338,7 @@ const BranchManager: React.FC<BranchManagerProps> = ({
   // Delete current branch
   const handleDeleteBranch = async () => {
     if (currentBranch === 'main' || currentBranch === 'master') {
-      toast({
-        title: 'Cannot delete branch',
-        description: 'Cannot delete the main/master branch',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
+      showToast('Cannot delete branch', 'Cannot delete the main/master branch', 'error');
       return;
     }
     
@@ -193,22 +364,10 @@ const BranchManager: React.FC<BranchManagerProps> = ({
         onBranchChange(defaultBranch);
       }
       
-      toast({
-        title: 'Branch deleted',
-        description: `Deleted branch: ${currentBranch}`,
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
+      showToast('Branch deleted', `Deleted branch: ${currentBranch}`, 'success');
     } catch (error) {
       console.error('Error deleting branch:', error);
-      toast({
-        title: 'Error deleting branch',
-        description: String(error),
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      showToast('Error deleting branch', String(error), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -216,22 +375,21 @@ const BranchManager: React.FC<BranchManagerProps> = ({
 
   return (
     <BranchContainer>
-      <Text fontWeight="bold" mb={2}>
+      <Text $fontWeight="bold" style={{ marginBottom: 8 }}>
         Branch Management
       </Text>
       
-      <Flex align="center" mb={3}>
+      <Flex $align="center" style={{ marginBottom: 12 }}>
         <BiGitBranch size={18} style={{ marginRight: '8px' }} />
         <Text>Current: {currentBranch}</Text>
       </Flex>
       
-      <Flex mb={3}>
+      <Flex style={{ marginBottom: 12 }}>
         <Select 
           value={currentBranch}
           onChange={handleBranchChange}
           disabled={isLoading || branches.length === 0}
-          mr={2}
-          size="sm"
+          style={{ marginRight: 8 }}
         >
           {branches.map(branch => (
             <option key={branch} value={branch}>
@@ -240,49 +398,45 @@ const BranchManager: React.FC<BranchManagerProps> = ({
           ))}
         </Select>
         
-        <Tooltip label="Refresh branches">
-          <IconButton
-            aria-label="Refresh branches"
-            icon={<BiRefresh />}
-            size="sm"
-            onClick={loadBranches}
-            isLoading={isLoading}
-            mr={2}
-          />
-        </Tooltip>
+        <IconButton
+          title="Refresh branches"
+          onClick={loadBranches}
+          $isLoading={isLoading}
+          style={{ marginRight: 8 }}
+        >
+          <BiRefresh />
+        </IconButton>
       </Flex>
       
-      <Flex justify="space-between">
+      <Flex $justify="space-between">
         <Button
-          leftIcon={<BiPlus />}
-          size="sm"
-          onClick={onOpen}
-          isLoading={isLoading}
-          colorScheme="blue"
-          variant="outline"
+          $variant="outline"
+          $colorScheme="blue"
+          onClick={disclosure.onOpen}
+          $isLoading={isLoading}
         >
+          <BiPlus />
           New Branch
         </Button>
         
         <Button
-          leftIcon={<BiTrash />}
-          size="sm"
+          $variant="outline"
+          $colorScheme="red"
           onClick={handleDeleteBranch}
-          isLoading={isLoading}
-          colorScheme="red"
-          variant="outline"
-          isDisabled={currentBranch === 'main' || currentBranch === 'master'}
+          $isLoading={isLoading}
+          $isDisabled={currentBranch === 'main' || currentBranch === 'master'}
         >
+          <BiTrash />
           Delete Branch
         </Button>
       </Flex>
       
       {/* Modal for creating new branch */}
-      <Modal isOpen={isOpen} onClose={onClose}>
+      <Modal $isOpen={disclosure.open}>
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Create New Branch</ModalHeader>
-          <ModalCloseButton />
+          <CloseButton onClick={disclosure.onClose}>×</CloseButton>
           <ModalBody>
             <FormControl>
               <FormLabel>Branch Name</FormLabel>
@@ -295,19 +449,38 @@ const BranchManager: React.FC<BranchManagerProps> = ({
           </ModalBody>
 
           <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onClose}>
+            <Button style={{ marginRight: 12 }} onClick={disclosure.onClose}>
               Cancel
             </Button>
             <Button 
-              colorScheme="blue" 
+              $colorScheme="blue" 
               onClick={handleCreateBranch}
-              isLoading={isLoading}
+              $isLoading={isLoading}
             >
               Create
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
+      
+      {/* Toast message */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          backgroundColor: toastMessage.status === 'success' ? '#48BB78' : 
+                          toastMessage.status === 'error' ? '#F56565' : '#4299E1',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '4px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          zIndex: 1000
+        }}>
+          <strong>{toastMessage.title}</strong>
+          <p>{toastMessage.description}</p>
+        </div>
+      )}
     </BranchContainer>
   );
 };

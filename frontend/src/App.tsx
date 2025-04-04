@@ -19,7 +19,7 @@ const App: React.FC = () => {
 
   return (
     <StyledThemeProvider theme={currentTheme}>
-      <GlobalStyle />
+      <GlobalStyle theme={currentTheme} />
       <Layout>
         <Routes>
           <Route path="/" element={<HomePage />} />

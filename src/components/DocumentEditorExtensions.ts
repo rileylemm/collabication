@@ -12,7 +12,7 @@ import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
-import { Extension } from '@tiptap/core';
+import { Extension, AnyExtension } from '@tiptap/core';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
@@ -28,7 +28,7 @@ export interface DocumentEditorExtensionsOptions {
 }
 
 export const getExtensions = (options: DocumentEditorExtensionsOptions = {}) => {
-  const extensions = [
+  const extensions: AnyExtension[] = [
     StarterKit.configure({
       heading: {
         levels: [1, 2, 3, 4, 5, 6],
@@ -117,7 +117,12 @@ export const YjsExtension = Extension.create({
     const yUndoManager = this.options.yUndoManager;
     
     if (!yUndoManager) {
-      return {};
+      return {
+        // Return empty handlers if no undoManager is available
+        'Mod-z': () => true,
+        'Mod-y': () => true,
+        'Mod-Shift-z': () => true,
+      };
     }
 
     return {

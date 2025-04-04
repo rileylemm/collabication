@@ -291,7 +291,7 @@ const config: AppConfig = {
   app: {
     name: finalMergedConfig.app?.name ?? defaultConfig.app.name,
     version: finalMergedConfig.app?.version ?? defaultConfig.app.version,
-    documentTypes: finalMergedConfig.app?.documentTypes ?? defaultConfig.app.documentTypes,
+    documentTypes: (finalMergedConfig.app?.documentTypes || defaultConfig.app.documentTypes).filter(Boolean) as string[],
     maxFileSize: finalMergedConfig.app?.maxFileSize ?? defaultConfig.app.maxFileSize,
     autoSaveInterval: finalMergedConfig.app?.autoSaveInterval ?? defaultConfig.app.autoSaveInterval,
   },

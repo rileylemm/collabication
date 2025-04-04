@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useCollaboration } from '../contexts/CollaborationContext';
-import { Permission, PermissionRole } from '../services/collaborationService';
+import { Permission } from '../services/collaborationService';
+import type { PermissionRole } from '../services/collaborationService';
 import { FaUserPlus, FaTimes, FaExchangeAlt, FaEdit, FaCheck, FaTrash } from 'react-icons/fa';
 
 interface PermissionsPanelProps {

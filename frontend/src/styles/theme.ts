@@ -5,14 +5,26 @@ interface ThemeColors {
   primary: string;
   secondary: string;
   background: string;
+  backgroundAlt: string;
+  backgroundHover: string;
+  codeBackground: string;
+  inputBackground: string;
+  hoverBackground: string;
+  disabledBackground: string;
   surface: string;
+  surfaceAlt: string;
+  surfaceHighlight: string;
   text: string;
   textSecondary: string;
+  textTertiary: string;
+  textOnPrimary: string;
   border: string;
   error: string;
   warning: string;
   success: string;
   info: string;
+  primaryDark: string;
+  toolCallBackground: string;
 }
 
 // The complete theme type
@@ -54,14 +66,26 @@ export const lightTheme: Theme = {
     primary: '#4361ee',
     secondary: '#3f37c9',
     background: '#ffffff',
+    backgroundAlt: '#f8f9fa',
+    backgroundHover: '#e9ecef',
+    codeBackground: '#f1f3f5',
+    inputBackground: '#f8f9fa',
+    hoverBackground: '#e9ecef',
+    disabledBackground: '#e9ecef',
     surface: '#f5f7fa',
+    surfaceAlt: '#e9ecef',
+    surfaceHighlight: '#e9f5ff',
     text: '#1a1a1a',
     textSecondary: '#4e4e4e',
+    textTertiary: '#6c757d',
+    textOnPrimary: '#ffffff',
     border: '#e0e0e0',
     error: '#d90429',
     warning: '#ff9900',
     success: '#06d6a0',
     info: '#118ab2',
+    primaryDark: '#3a56d4',
+    toolCallBackground: '#f0f7ff',
   },
   fontSizes: {
     small: '0.875rem',
@@ -98,14 +122,26 @@ export const darkTheme: Theme = {
     primary: '#4cc9f0',
     secondary: '#7209b7',
     background: '#1a1a1a',
+    backgroundAlt: '#252525',
+    backgroundHover: '#333333',
+    codeBackground: '#2d2d2d',
+    inputBackground: '#252525',
+    hoverBackground: '#333333',
+    disabledBackground: '#3d3d3d',
     surface: '#2d2d2d',
+    surfaceAlt: '#333333',
+    surfaceHighlight: '#1e3a5f',
     text: '#f5f5f5',
     textSecondary: '#b0b0b0',
+    textTertiary: '#888888',
+    textOnPrimary: '#ffffff',
     border: '#444444',
     error: '#ef476f',
     warning: '#ffd166',
     success: '#06d6a0',
     info: '#118ab2',
+    primaryDark: '#0096c7',
+    toolCallBackground: '#1e3a5f',
   },
   fontSizes: {
     small: '0.875rem',

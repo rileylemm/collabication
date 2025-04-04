@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
+import { Theme } from '../styles/theme';
 import { useNavigate } from 'react-router-dom';
 import { 
   unifiedSearchService, 
@@ -12,6 +13,11 @@ import {
 import { useGitHub } from '../contexts/GitHubContext';
 import { BiFile, BiGitCommit, BiSearch, BiX, BiFilterAlt } from 'react-icons/bi';
 import { AiOutlineLoading } from 'react-icons/ai';
+
+// Extend the default theme
+declare module 'styled-components' {
+  export interface DefaultTheme extends Theme {}
+}
 
 // Props for the UnifiedSearchPanel component
 interface UnifiedSearchPanelProps {

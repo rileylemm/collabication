@@ -1,14 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useGitHub } from '../contexts/GitHubContext';
-import { githubService, Repository, FileStatus } from '../services/githubService';
+import type { Repository } from '../types/github';
+import { useProject } from '../contexts/ProjectContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { formatDistance } from 'date-fns';
+import { AiOutlinePlus, AiOutlineGithub, AiOutlineFolder } from 'react-icons/ai';
+import { FiChevronRight, FiChevronDown, FiFile, FiSettings } from 'react-icons/fi';
+import { toast } from 'react-toastify';
 import FileBrowser from '../components/FileBrowser';
 import BranchManager from '../components/BranchManager';
 import CommitHistoryPanel from '../components/CommitHistoryPanel';
 import VersionControlPanel from '../components/VersionControlPanel';
 import PullRequestPanel from '../components/PullRequestPanel';
+import { githubService } from '../services/githubService';
 import { BiGitBranch, BiHistory, BiGitPullRequest, BiFolder, BiCog, BiGroup, BiInfoCircle } from 'react-icons/bi';
 import { AiOutlineHome, AiOutlineSetting } from 'react-icons/ai';
 import SettingsPanel from '../components/SettingsPanel';
@@ -55,12 +62,14 @@ const MainContent = styled.div`
   padding: 1rem;
 `;
 
-const RightSidebar = styled.div`
+const RightSidebar = styled.div<{ $visible: boolean }>`
   width: 300px;
+  height: 100%;
+  padding: 1rem;
   border-left: 1px solid ${props => props.theme.colors.border};
   background-color: ${props => props.theme.colors.surface};
   overflow-y: auto;
-  display: ${props => props.visible ? 'block' : 'none'};
+  display: ${props => props.$visible ? 'block' : 'none'};
 `;
 
 // Navigation components
@@ -77,10 +86,10 @@ const NavigationItem = styled.li<{ active: boolean }>`
   align-items: center;
   gap: 0.5rem;
   border-left: 3px solid ${props => props.active ? props.theme.colors.primary : 'transparent'};
-  background-color: ${props => props.active ? props.theme.colors.primaryLight : 'transparent'};
+  background-color: ${props => props.active ? props.theme.colors.surface : 'transparent'};
   
   &:hover {
-    background-color: ${props => props.active ? props.theme.colors.primaryLight : props.theme.colors.borderLight};
+    background-color: ${props => props.active ? props.theme.colors.surface : props.theme.colors.hoverBackground};
   }
 `;
 
@@ -208,7 +217,7 @@ const ActivityList = styled.ul`
 
 const ActivityItem = styled.li`
   padding: 0.75rem 0;
-  border-bottom: 1px solid ${props => props.theme.colors.borderLight};
+  border-bottom: 1px solid ${props => props.theme.colors.border};
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -243,7 +252,7 @@ const TeamList = styled.ul`
 
 const TeamMember = styled.li`
   padding: 0.75rem 0;
-  border-bottom: 1px solid ${props => props.theme.colors.borderLight};
+  border-bottom: 1px solid ${props => props.theme.colors.border};
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -257,7 +266,7 @@ const Avatar = styled.div`
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background-color: ${props => props.theme.colors.borderLight};
+  background-color: ${props => props.theme.colors.surface};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -298,7 +307,7 @@ const SectionTitle = styled.h3`
   margin-bottom: 1rem;
   color: ${props => props.theme.colors.text};
   font-size: 1rem;
-  border-bottom: 1px solid ${props => props.theme.colors.borderLight};
+  border-bottom: 1px solid ${props => props.theme.colors.border};
   padding-bottom: 0.5rem;
 `;
 
@@ -497,30 +506,53 @@ const ProjectManagementPage: React.FC = () => {
     currentPath: string,
     fileList: string[]
   ) => {
-    const result: any[] = [];
+    // Create a map to organize files by directory
+    const fileMap: Record<string, any> = {
+      '/': [] // Root directory
+    };
     
-    for (const fileName of fileList) {
-      const fullPath = `${currentPath === '/' ? '' : currentPath}/${fileName}`;
-      const isDir = await githubService.isDirectory(repositoryName, fullPath);
+    // Process all files and organize them by directory
+    fileList.forEach(file => {
+      // Skip .git directory files
+      if (file.startsWith('.git/')) return;
       
-      const item = {
-        id: uuidv4(),
-        name: fileName,
-        type: isDir ? 'folder' : 'file',
-        path: fullPath,
-        extension: isDir ? undefined : fileName.split('.').pop(),
-        isOpen: false
-      };
+      // Parse the directory path
+      const lastSlashIndex = file.lastIndexOf('/');
+      const dirPath = lastSlashIndex === -1 ? '/' : `/${file.substring(0, lastSlashIndex)}`;
+      const fileName = lastSlashIndex === -1 ? file : file.substring(lastSlashIndex + 1);
       
-      if (isDir) {
-        const subFiles = await githubService.listFiles(repositoryName, fullPath);
-        item.children = await buildFileTree(repositoryName, fullPath, subFiles);
+      // Initialize directory in map if it doesn't exist
+      if (!fileMap[dirPath]) {
+        fileMap[dirPath] = [];
       }
       
-      result.push(item);
-    }
+      // Add file to its directory
+      fileMap[dirPath].push({
+        id: uuidv4(),
+        name: fileName,
+        type: fileName.includes('.') ? 'file' : 'folder',
+        path: `${dirPath}/${fileName}`,
+        extension: fileName.includes('.') ? fileName.split('.').pop() : undefined,
+        isOpen: false
+      });
+    });
     
-    return result;
+    // Check if the file item type has children property before accessing it
+    const processFileItems = (items: any[], currentPath: string): any[] => {
+      return items.map(item => {
+        if (item.type === 'folder') {
+          const folderPath = item.path;
+          const folderChildren = fileMap[folderPath] || [];
+          return {
+            ...item,
+            children: processFileItems(folderChildren, folderPath)
+          };
+        }
+        return item;
+      });
+    };
+    
+    return processFileItems(fileMap['/'] || [], '/');
   };
   
   // Handle repository change
@@ -701,7 +733,7 @@ const ProjectManagementPage: React.FC = () => {
           )}
         </MainContent>
         
-        <RightSidebar visible={showRightSidebar}>
+        <RightSidebar $visible={showRightSidebar}>
           {renderRightSidebar()}
         </RightSidebar>
       </ContentContainer>

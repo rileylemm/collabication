@@ -42,6 +42,7 @@ export interface UserAwarenessData {
   id: string;
   name: string;
   color: string;
+  avatar?: string;
   position?: {
     from: number;
     to: number;
