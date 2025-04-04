@@ -1,0 +1,160 @@
+version: '3.8'
+
+services:
+  # Frontend Electron build service (builds the Electron app)
+  frontend-build:
+    build:
+      context: .
+      dockerfile: docker/frontend.prod.Dockerfile
+    volumes:
+      - electron_build:/app/dist
+    environment:
+      - NODE_ENV=production
+      - NPCSH_API_URL=http://npcsh-api:4000
+      - COLLAB_SERVER_URL=wss://collab.${DOMAIN:-example.com}
+      - MONGO_URI=mongodb://mongodb:27017/collabication
+
+  # npcsh API adapter service
+  npcsh-api:
+    build:
+      context: .
+      dockerfile: docker/npcsh-api.prod.Dockerfile
+    restart: always
+    ports:
+      - '127.0.0.1:4000:4000'
+    environment:
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/collabication
+      - JWT_SECRET=${JWT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX_REQUESTS=100
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:4000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Collaboration server (Yjs)
+  collab-server:
+    build:
+      context: .
+      dockerfile: docker/collab-server.prod.Dockerfile
+    restart: always
+    ports:
+      - '127.0.0.1:1234:1234'
+    environment:
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/collabication
+      - JWT_SECRET=${JWT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - PORT=1234
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://app.example.com}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:1234/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - collab_data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # MongoDB database
+  mongodb:
+    image: mongo:6.0
+    restart: always
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d
+      - ./mongo-backups:/backups
+    ports:
+      - '127.0.0.1:27017:27017'
+    environment:
+      - MONGO_INITDB_DATABASE=collabication
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/www:/usr/share/nginx/html
+    depends_on:
+      - collab-server
+      - npcsh-api
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Backup service
+  backup:
+    image: alpine:latest
+    restart: always
+    volumes:
+      - mongodb_data:/data/db:ro
+      - collab_data:/data/collab:ro
+      - ./backups:/backups
+      - ./scripts:/scripts
+    command: /scripts/backup.sh
+    environment:
+      - BACKUP_INTERVAL=${BACKUP_INTERVAL:-86400} # Default: daily (in seconds)
+      - BACKUP_RETENTION=${BACKUP_RETENTION:-7} # Default: keep 7 backups
+    depends_on:
+      - mongodb
+      - collab-server
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '5m'
+        max-file: '2'
+
+volumes:
+  mongodb_data:
+    driver: local
+  collab_data:
+    driver: local
+  electron_build:
+    driver: local
