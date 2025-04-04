@@ -9,9 +9,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY backend/package.json backend/
 
-# Install dependencies
-RUN npm install
-RUN cd backend && npm install
+# Install dependencies with legacy peer deps flag
+RUN npm install --legacy-peer-deps
+RUN cd backend && npm install --legacy-peer-deps
 
 # Create directory for logs
 RUN mkdir -p logs

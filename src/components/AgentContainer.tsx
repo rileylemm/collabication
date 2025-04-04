@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 import { v4 as uuidv4 } from 'uuid';
-import AgentChatPanel, { ChatMessage, ContextItem } from './AgentChatPanel';
+import AgentChatPanel, { ChatMessage, ContextItem, ToolCall } from './AgentChatPanel';
 import { agentService } from '../services/agentService';
 
 // Define FileItem interface locally instead of importing it

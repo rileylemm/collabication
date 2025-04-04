@@ -25,7 +25,7 @@ import {
 } from '../utils/fileUtils';
 import AgentContainer from '../components/AgentContainer';
 import { useGitHub } from '../contexts/GitHubContext';
-import { githubService, FileStatus, FileDiff, CommitInfo, ConflictInfo } from '../services/githubService';
+import { githubService, FileStatus, FileDiff, CommitInfo, ConflictInfo, FileStatusInfo } from '../services/githubService';
 import CollaborationStatus from '../components/CollaborationStatus';
 import CollaborationUsersList from '../components/CollaborationUsersList';
 import { CollaborationProvider } from '../contexts/CollaborationContext';
@@ -33,8 +33,6 @@ import { BiNetworkChart, BiX, BiUserCheck, BiGitCompare, BiHistory, BiGitBranch,
 import PermissionsPanel from '../components/PermissionsPanel';
 import PullRequestPanel from '../components/PullRequestPanel';
 import DiffViewer from '../components/DiffViewer';
-import AgentPanel from '../components/AgentPanel';
-import FileTreeView from '../components/FileTreeView';
 import CommitHistoryPanel from '../components/CommitHistoryPanel';
 import BranchManager from '../components/BranchManager';
 import { AiOutlineRobot, AiOutlineHistory } from 'react-icons/ai';
@@ -1088,62 +1086,8 @@ const EditorPage: React.FC = () => {
 
   // Fix renderEditor function to correctly use the CodeEditor and DocumentEditor components
   const renderEditor = () => {
-    if (!activeTabId) return null;
-    
     const currentTab = tabs.find(tab => tab.id === activeTabId);
     if (!currentTab) return null;
-    
-    // If showing diff view, render the diff viewer instead
-    if (showDiffView) {
-      return (
-        <EditorContainer>
-          <DiffControls>
-            <div>
-              <label>Diff type:</label>
-              <StyledSelect 
-                value={diffType} 
-                onChange={handleDiffTypeChange}
-              >
-                <option value="uncommitted">Uncommitted Changes</option>
-                <option value="branch">Branch Comparison</option>
-                <option value="commit">Commit Comparison</option>
-              </StyledSelect>
-              
-              {diffType === 'branch' && (
-                <>
-                  <label>Compare with:</label>
-                  <StyledSelect 
-                    value={compareBranch} 
-                    onChange={handleCompareBranchChange}
-                  >
-                    {availableBranches.map(branch => (
-                      <option key={branch} value={branch}>{branch}</option>
-                    ))}
-                  </StyledSelect>
-                </>
-              )}
-            </div>
-            
-            <ToolbarButton onClick={loadDiff} disabled={isLoadingDiff}>
-              {isLoadingDiff ? 'Loading...' : 'Refresh Diff'}
-            </ToolbarButton>
-            
-            <ToolbarButton onClick={() => setShowDiffView(false)}>
-              Back to Editor
-            </ToolbarButton>
-          </DiffControls>
-          
-          {currentDiff && (
-            <DiffViewer 
-              diff={currentDiff}
-              title={currentTab.path || 'Unknown File'}
-              showLineNumbers
-              viewMode="split"
-            />
-          )}
-        </EditorContainer>
-      );
-    }
     
     // Use safe property access for content
     const fileContent = currentTab.content || '';
@@ -1158,14 +1102,19 @@ const EditorPage: React.FC = () => {
     
     // Use preferred type to determine which editor to show
     if (preferredType === 'code' || (preferredType === 'automatic' && isCodeFile(fileExtension))) {
+      // Get language from extension, ensuring it matches what CodeEditor expects
+      let language = getLanguageFromExtension(fileExtension);
+      // If it's not one of the supported languages, default to JavaScript
+      if (language !== 'javascript' && language !== 'typescript' && language !== 'python') {
+        language = 'javascript';
+      }
+      
       return (
         <CodeEditor
           key={activeTabId}
           code={fileContent}
           onChange={handleCodeChange}
-          language={getLanguageFromExtension(fileExtension)}
-          path={filePath}
-          onSave={handleSave}
+          language={language}
           ref={codeEditorRef}
           readOnly={!hasEditPermission}
         />
@@ -1176,10 +1125,9 @@ const EditorPage: React.FC = () => {
           key={activeTabId}
           initialValue={fileContent}
           onChange={handleDocumentChange}
-          onSave={handleSave}
-          ref={editorRef}
-          path={filePath}
-          showToolbar={true}
+          filename={currentTab.name || 'Untitled'}
+          content={fileContent}
+          ref={documentEditorRef}
           readOnly={!hasEditPermission}
         />
       );
@@ -1229,8 +1177,56 @@ const EditorPage: React.FC = () => {
     
     // Save to Git if in Git mode
     if (isGitRepo && repoName) {
-      saveToGit(currentTab.path, content);
+      // The path in the file item has a leading '/', remove it for the API call
+      const filePath = currentTab.path.startsWith('/') ? currentTab.path.substring(1) : currentTab.path;
+      githubService.writeFile(repoName, filePath, content);
+      
+      // Refresh Git status after save
+      refreshGitStatus(repoName);
     }
+    
+    // Show success toast
+    toast.success('File saved successfully');
+  };
+
+  // Handler for code editor changes
+  const handleCodeChange = (code: string) => {
+    setDocumentContent(code);
+    
+    // Update the current tab to mark as dirty
+    setTabs(prev => prev.map(tab => 
+      tab.id === activeTabId ? { ...tab, isDirty: true } : tab
+    ));
+    
+    // Update file contents
+    setFileContents(prev => ({
+      ...prev,
+      [activeTabId]: {
+        ...prev[activeTabId],
+        content: code,
+        isDirty: true
+      }
+    }));
+  };
+
+  // Handler for document editor changes
+  const handleDocumentChange = (content: string) => {
+    setDocumentContent(content);
+    
+    // Update the current tab to mark as dirty
+    setTabs(prev => prev.map(tab => 
+      tab.id === activeTabId ? { ...tab, isDirty: true } : tab
+    ));
+    
+    // Update file contents
+    setFileContents(prev => ({
+      ...prev,
+      [activeTabId]: {
+        ...prev[activeTabId],
+        content,
+        isDirty: true
+      }
+    }));
   };
 
   // Inside the EditorPage component, after the existing sidebar state
@@ -1278,19 +1274,26 @@ const EditorPage: React.FC = () => {
   };
 
   const handleCommit = async () => {
-    if (!repoName || !commitMessage || !user) return;
+    if (!repoName) return;
+    
+    if (!commitMessage) {
+      toast.error('Please enter a commit message');
+      return;
+    }
+    
+    setIsCommitting(true);
     
     try {
-      setIsCommitting(true);
-      // Add author parameter with user information
-      await githubService.commit(repoName, commitMessage, {
-        name: user.name || user.login,
-        email: `${user.login}@github.com` // Use github username as email if real email not available
-      });
-      setCommitMessage('');
-      await refreshGitStatus(repoName);
+      await githubService.commit(
+        repoName,
+        commitMessage
+      );
+      
+      toast.success('Changes committed successfully');
+      refreshGitStatus(repoName);
     } catch (error) {
       console.error('Error committing changes:', error);
+      toast.error('Failed to commit changes');
     } finally {
       setIsCommitting(false);
     }
@@ -1323,33 +1326,16 @@ const EditorPage: React.FC = () => {
       if (result.success) {
         // No conflicts, refresh the repository
         await loadGitRepository(repoName);
-        toast({
-          title: 'Pull successful',
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
+        toast.success('Pull successful');
       } else {
         // Conflicts detected
         setConflictingFiles(result.conflictingFiles);
         setShowVersionControl(true); // Show the version control panel
-        toast({
-          title: 'Merge conflicts detected',
-          description: `${result.conflictingFiles.length} file(s) have merge conflicts that need resolution.`,
-          status: 'warning',
-          duration: 5000,
-          isClosable: true,
-        });
+        toast.error(`${result.conflictingFiles.length} file(s) have merge conflicts that need resolution.`);
       }
     } catch (error) {
       console.error('Error pulling changes:', error);
-      toast({
-        title: 'Error pulling changes',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      toast.error(error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsPulling(false);
     }
@@ -1370,22 +1356,10 @@ const EditorPage: React.FC = () => {
       // Update the list of conflicting files
       setConflictingFiles(prev => prev.filter(file => file !== filepath));
       
-      toast({
-        title: 'Conflict resolved',
-        description: `Successfully resolved conflicts in ${filepath}`,
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
+      toast.success(`Successfully resolved conflicts in ${filepath}`);
     } catch (error) {
       console.error('Error resolving conflict:', error);
-      toast({
-        title: 'Error resolving conflict',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      toast.error(error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsResolvingConflicts(false);
     }
@@ -1414,22 +1388,10 @@ const EditorPage: React.FC = () => {
       // Refresh the repository
       await refreshGitStatus(repoName);
       
-      toast({
-        title: 'Conflicts resolved',
-        description: 'All conflicts have been successfully resolved.',
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
+      toast.success('All conflicts have been successfully resolved.');
     } catch (error) {
       console.error('Error completing conflict resolution:', error);
-      toast({
-        title: 'Error completing conflict resolution',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      toast.error(error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsResolvingConflicts(false);
     }
@@ -1446,13 +1408,7 @@ const EditorPage: React.FC = () => {
       return await githubService.getConflictInfo(repositoryName, filepath);
     } catch (error) {
       console.error('Error getting conflict info:', error);
-      toast({
-        title: 'Error getting conflict info',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      toast.error(error instanceof Error ? error.message : 'Unknown error');
       return null;
     }
   };
@@ -1538,43 +1494,6 @@ const EditorPage: React.FC = () => {
     }
   };
 
-  const handleGitCommit = async () => {
-    if (!selectedRepository || !selectedBranch) {
-      toast({
-        title: 'Repository not selected',
-        description: 'Please select a repository and branch to commit changes',
-        status: 'error',
-      });
-      return;
-    }
-
-    try {
-      setIsGitOperationInProgress(true);
-      await githubService.commitChanges(
-        selectedRepository,
-        commitMessage || 'Update file(s)',
-        userSettings.gitConfig?.name || 'Anonymous',
-        userSettings.gitConfig?.email || 'anonymous@example.com'
-      );
-      toast({
-        title: 'Changes committed',
-        description: 'Your changes have been committed to the local repository',
-        status: 'success',
-      });
-      setCommitMessage('');
-      refreshGitStatus();
-    } catch (error) {
-      console.error('Error committing changes:', error);
-      toast({
-        title: 'Commit failed',
-        description: 'Failed to commit changes. Please try again.',
-        status: 'error',
-      });
-    } finally {
-      setIsGitOperationInProgress(false);
-    }
-  };
-
   // Inside the EditorPage component, add a state for showing branch manager
   const [showBranchManager, setShowBranchManager] = useState<boolean>(false);
 
@@ -1602,18 +1521,13 @@ const EditorPage: React.FC = () => {
       if (staged) {
         await githubService.addFile(repoName, filepath);
       } else {
-        await githubService.unstageFile(repoName, filepath);
+        // Assuming unstageFile doesn't exist, use resetFile instead
+        await githubService.resetFile(repoName, filepath);
       }
-      refreshGitStatus();
+      refreshGitStatus(repoName);
     } catch (error) {
       console.error('Error staging file:', error);
-      toast({
-        title: 'Failed to stage file',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
+      toast.error(error instanceof Error ? error.message : 'Unknown error');
     }
   };
 
@@ -1629,7 +1543,7 @@ const EditorPage: React.FC = () => {
   const VersionControlToggleButton = styled.button`
     position: fixed;
     bottom: 1rem;
-    right: ${props => props.showAgentPanel ? '360px' : '70px'};
+    right: ${(props: any) => props.showAgentPanel ? '360px' : '70px'};
     z-index: 10;
     width: 50px;
     height: 50px;
@@ -1646,7 +1560,7 @@ const EditorPage: React.FC = () => {
     transition: right 0.3s ease;
     
     &:hover {
-      background-color: ${props => props.theme.colors.secondaryDark};
+      background-color: ${props => props.theme.colors.secondary};
     }
   `;
 
@@ -1656,6 +1570,32 @@ const EditorPage: React.FC = () => {
 
   // Add a state for the current file's preferred type
   const [currentPreferredType, setCurrentPreferredType] = useState<PreferredFileType>('automatic');
+
+  // Add userSettings state after other state declarations
+  const [userSettings, setUserSettings] = useState<{ name?: string; email?: string }>(() => {
+    // Try to load from localStorage
+    const storedSettings = localStorage.getItem('userSettings');
+    return storedSettings ? JSON.parse(storedSettings) : { name: '', email: '' };
+  });
+
+  // Add handleSave function near other handler functions
+  const handleSave = useCallback((repoNameArg?: string, currentTabArg?: ExtendedTabItem, contentArg?: string) => {
+    // If called with no arguments (via shortcut), use current active values
+    const targetRepoName = repoNameArg || repoName;
+    const targetTab = currentTabArg || tabs.find(tab => tab.id === activeTabId);
+    const targetContent = contentArg || documentContent;
+    
+    if (!targetRepoName || !targetTab || !targetTab.path) return;
+    
+    // Save the file
+    const filePath = targetTab.path.startsWith('/') ? targetTab.path.substring(1) : targetTab.path;
+    saveToGit(filePath, targetContent);
+    
+    // Update tab state to mark as saved
+    setTabs(prev => prev.map(tab => 
+      tab.id === (targetTab.id) ? { ...tab, isDirty: false } : tab
+    ));
+  }, [repoName, tabs, activeTabId, documentContent, saveToGit]);
 
   return (
     <PageContainer showAgentPanel={showAgentPanel}>
