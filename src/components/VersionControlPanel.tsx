@@ -4,11 +4,13 @@ import GitStatusBar from './GitStatusBar';
 import CommitHistoryPanel from './CommitHistoryPanel';
 import BranchManager from './BranchManager';
 import ConflictResolutionPanel from './ConflictResolutionPanel';
-import { BiGitBranch, BiHistory, BiCodeCurly, BiError } from 'react-icons/bi';
+import PullRequestPanel from './PullRequestPanel';
+import { BiGitBranch, BiHistory, BiCodeCurly, BiError, BiGitPullRequest } from 'react-icons/bi';
 import { FileStatusInfo, ConflictInfo } from '../services/githubService';
 
 interface VersionControlPanelProps {
   repositoryName: string;
+  repositoryOwner?: string;
   currentBranch: string;
   modifiedFiles: FileStatusInfo[];
   conflictingFiles?: string[];
@@ -125,10 +127,12 @@ enum TabType {
   HISTORY = 'history',
   BRANCHES = 'branches',
   CONFLICTS = 'conflicts',
+  PULL_REQUESTS = 'pull_requests',
 }
 
 const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
   repositoryName,
+  repositoryOwner,
   currentBranch,
   modifiedFiles,
   conflictingFiles = [],
@@ -204,6 +208,16 @@ const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
         ) : (
           <div>Conflict resolution is not available</div>
         );
+      case TabType.PULL_REQUESTS:
+        return repositoryOwner ? (
+          <PullRequestPanel
+            repositoryOwner={repositoryOwner}
+            repositoryName={repositoryName}
+            currentBranch={currentBranch}
+          />
+        ) : (
+          <div>Repository owner information is not available</div>
+        );
       default:
         return null;
     }
@@ -250,6 +264,13 @@ const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
             Conflicts ({conflictingFiles.length})
           </Tab>
         )}
+        <Tab 
+          active={activeTab === TabType.PULL_REQUESTS} 
+          onClick={() => setActiveTab(TabType.PULL_REQUESTS)}
+        >
+          <TabIcon><BiGitPullRequest /></TabIcon>
+          PRs
+        </Tab>
       </TabsContainer>
       
       <TabContent>

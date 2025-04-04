@@ -17,7 +17,7 @@ import { githubService, FileStatus, FileDiff, CommitInfo, ConflictInfo } from '.
 import CollaborationStatus from '../components/CollaborationStatus';
 import CollaborationUsersList from '../components/CollaborationUsersList';
 import { CollaborationProvider } from '../contexts/CollaborationContext';
-import { BiNetworkChart, BiX, BiUserCheck, BiGitCompare, BiHistory, BiGitBranch } from 'react-icons/bi';
+import { BiNetworkChart, BiX, BiUserCheck, BiGitCompare, BiHistory, BiGitBranch, BiGitMerge } from 'react-icons/bi';
 import PermissionsPanel from '../components/PermissionsPanel';
 import PullRequestPanel from '../components/PullRequestPanel';
 import DiffViewer from '../components/DiffViewer';
@@ -1800,6 +1800,14 @@ const EditorPage: React.FC = () => {
               >
                 <BiGitBranch /> Branches
               </ToolbarButton>
+              
+              <ToolbarButton
+                onClick={togglePullRequests}
+                active={showPullRequests}
+                title="Pull Requests"
+              >
+                <BiGitMerge /> Pull Requests
+              </ToolbarButton>
             </>
           )}
         </EditorToolbar>
@@ -1898,7 +1906,7 @@ const EditorPage: React.FC = () => {
           <PullRequestPanel 
             repositoryOwner={user?.login || ''}
             repositoryName={repoName || ''}
-            currentBranch="main" // TODO: Get actual current branch
+            currentBranch={currentBranch}
           />
         </PRSidebar>
       )}
@@ -1936,6 +1944,7 @@ const EditorPage: React.FC = () => {
       {repoName && (
         <VersionControlPanel
           repositoryName={repoName}
+          repositoryOwner={user?.login || ''}
           currentBranch={currentBranch}
           modifiedFiles={modifiedFiles}
           conflictingFiles={conflictingFiles}
