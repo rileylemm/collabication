@@ -30,6 +30,44 @@ export interface CommitResult {
   };
 }
 
+// Pull Request types
+export interface PullRequest {
+  id: number;
+  number: number;
+  title: string;
+  body: string | null;
+  state: 'open' | 'closed' | 'merged';
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  head: {
+    ref: string;
+    sha: string;
+  };
+  base: {
+    ref: string;
+    sha: string;
+  };
+  mergeable: boolean | null;
+  merged: boolean;
+  draft: boolean;
+}
+
+export interface PullRequestComment {
+  id: number;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+}
+
 // Helper function to initialize git configuration
 const initGitConfig = async (userName: string, userEmail: string) => {
   await git.setConfig({
@@ -288,7 +326,7 @@ class GitHubService {
         { encoding: 'utf8' }
       );
       
-      return content;
+      return content.toString();
     } catch (error) {
       console.error('Error reading file:', error);
       throw error;
@@ -306,7 +344,8 @@ class GitHubService {
       const directory = filepath.split('/').slice(0, -1).join('/');
       if (directory) {
         try {
-          await fs.promises.mkdir(`/${repositoryName}/${directory}`, { recursive: true });
+          // Try to create directory without recursive option
+          await fs.promises.mkdir(`/${repositoryName}/${directory}`);
         } catch (err) {
           // Directory might already exist
           console.log('Directory exists or error:', err);
@@ -316,8 +355,7 @@ class GitHubService {
       // Write file
       await fs.promises.writeFile(
         `/${repositoryName}/${filepath}`,
-        content,
-        { encoding: 'utf8' }
+        content
       );
     } catch (error) {
       console.error('Error writing file:', error);
@@ -353,6 +391,347 @@ class GitHubService {
       return stats.isDirectory();
     } catch (error) {
       console.error('Error checking if path is directory:', error);
+      throw error;
+    }
+  }
+
+  // Create a pull request
+  async createPullRequest(
+    repoOwner: string, 
+    repoName: string, 
+    title: string, 
+    body: string, 
+    head: string, 
+    base: string = 'main'
+  ): Promise<PullRequest> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const { data } = await this.octokit.pulls.create({
+        owner: repoOwner,
+        repo: repoName,
+        title,
+        body,
+        head,
+        base,
+      });
+
+      // Use type assertion to avoid property errors
+      return {
+        id: data.id,
+        number: data.number,
+        title: data.title,
+        body: data.body,
+        state: data.state as 'open' | 'closed' | 'merged',
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        html_url: data.html_url,
+        user: {
+          login: data.user?.login || 'unknown',
+          avatar_url: data.user?.avatar_url || '',
+        },
+        head: {
+          ref: data.head.ref,
+          sha: data.head.sha,
+        },
+        base: {
+          ref: data.base.ref,
+          sha: data.base.sha,
+        },
+        // Use null for properties that might not exist in the response
+        mergeable: null,
+        merged: false,
+        draft: Boolean(data.draft),
+      };
+    } catch (error) {
+      console.error('Error creating pull request:', error);
+      throw error;
+    }
+  }
+
+  // List pull requests for a repository
+  async listPullRequests(
+    repoOwner: string, 
+    repoName: string, 
+    state: 'open' | 'closed' | 'all' = 'open'
+  ): Promise<PullRequest[]> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const { data } = await this.octokit.pulls.list({
+        owner: repoOwner,
+        repo: repoName,
+        state,
+        sort: 'updated',
+        direction: 'desc',
+      });
+
+      return data.map(pr => ({
+        id: pr.id,
+        number: pr.number,
+        title: pr.title,
+        body: pr.body,
+        state: pr.state as 'open' | 'closed' | 'merged',
+        created_at: pr.created_at,
+        updated_at: pr.updated_at,
+        html_url: pr.html_url,
+        user: {
+          login: pr.user?.login || 'unknown',
+          avatar_url: pr.user?.avatar_url || '',
+        },
+        head: {
+          ref: pr.head.ref,
+          sha: pr.head.sha,
+        },
+        base: {
+          ref: pr.base.ref,
+          sha: pr.base.sha,
+        },
+        // Use null for properties that might not exist in the response
+        mergeable: null, 
+        merged: false,
+        draft: Boolean(pr.draft),
+      }));
+    } catch (error) {
+      console.error('Error listing pull requests:', error);
+      throw error;
+    }
+  }
+
+  // Get details of a specific pull request
+  async getPullRequestDetails(
+    repoOwner: string, 
+    repoName: string, 
+    pullNumber: number
+  ): Promise<PullRequest> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const { data } = await this.octokit.pulls.get({
+        owner: repoOwner,
+        repo: repoName,
+        pull_number: pullNumber,
+      });
+
+      // Here we can use the proper properties since this API returns the full PR details
+      return {
+        id: data.id,
+        number: data.number,
+        title: data.title,
+        body: data.body,
+        state: data.state as 'open' | 'closed' | 'merged',
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        html_url: data.html_url,
+        user: {
+          login: data.user?.login || 'unknown',
+          avatar_url: data.user?.avatar_url || '',
+        },
+        head: {
+          ref: data.head.ref,
+          sha: data.head.sha,
+        },
+        base: {
+          ref: data.base.ref,
+          sha: data.base.sha,
+        },
+        mergeable: data.mergeable ?? null,
+        merged: Boolean(data.merged_at), // Use merged_at as indicator
+        draft: Boolean(data.draft),
+      };
+    } catch (error) {
+      console.error('Error getting pull request details:', error);
+      throw error;
+    }
+  }
+
+  // Get the list of files changed in a pull request
+  async getPullRequestFiles(
+    repoOwner: string, 
+    repoName: string, 
+    pullNumber: number
+  ): Promise<{ filename: string; status: string; additions: number; deletions: number; }[]> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const { data } = await this.octokit.pulls.listFiles({
+        owner: repoOwner,
+        repo: repoName,
+        pull_number: pullNumber,
+      });
+
+      return data.map(file => ({
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+      }));
+    } catch (error) {
+      console.error('Error getting pull request files:', error);
+      throw error;
+    }
+  }
+
+  // Update a pull request
+  async updatePullRequest(
+    repoOwner: string, 
+    repoName: string, 
+    pullNumber: number, 
+    title?: string, 
+    body?: string,
+    state?: 'open' | 'closed'
+  ): Promise<PullRequest> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const updateData: any = {};
+      if (title !== undefined) updateData.title = title;
+      if (body !== undefined) updateData.body = body;
+      if (state !== undefined) updateData.state = state;
+
+      const { data } = await this.octokit.pulls.update({
+        owner: repoOwner,
+        repo: repoName,
+        pull_number: pullNumber,
+        ...updateData,
+      });
+
+      return {
+        id: data.id,
+        number: data.number,
+        title: data.title,
+        body: data.body,
+        state: data.state as 'open' | 'closed' | 'merged',
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        html_url: data.html_url,
+        user: {
+          login: data.user?.login || 'unknown',
+          avatar_url: data.user?.avatar_url || '',
+        },
+        head: {
+          ref: data.head.ref,
+          sha: data.head.sha,
+        },
+        base: {
+          ref: data.base.ref,
+          sha: data.base.sha,
+        },
+        mergeable: null,
+        merged: Boolean(data.merged_at), // Use merged_at as indicator
+        draft: Boolean(data.draft),
+      };
+    } catch (error) {
+      console.error('Error updating pull request:', error);
+      throw error;
+    }
+  }
+
+  // Merge a pull request
+  async mergePullRequest(
+    repoOwner: string, 
+    repoName: string, 
+    pullNumber: number, 
+    commitMessage?: string,
+    mergeMethod: 'merge' | 'squash' | 'rebase' = 'merge'
+  ): Promise<{ merged: boolean; message: string }> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const { data } = await this.octokit.pulls.merge({
+        owner: repoOwner,
+        repo: repoName,
+        pull_number: pullNumber,
+        commit_message: commitMessage,
+        merge_method: mergeMethod,
+      });
+
+      return {
+        merged: data.merged,
+        message: data.message,
+      };
+    } catch (error) {
+      console.error('Error merging pull request:', error);
+      throw error;
+    }
+  }
+
+  // Add a comment to a pull request
+  async addPullRequestComment(
+    repoOwner: string, 
+    repoName: string, 
+    pullNumber: number, 
+    body: string
+  ): Promise<PullRequestComment> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const { data } = await this.octokit.issues.createComment({
+        owner: repoOwner,
+        repo: repoName,
+        issue_number: pullNumber,
+        body,
+      });
+
+      return {
+        id: data.id,
+        body: data.body || '',
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        user: {
+          login: data.user?.login || 'unknown',
+          avatar_url: data.user?.avatar_url || '',
+        },
+      };
+    } catch (error) {
+      console.error('Error adding pull request comment:', error);
+      throw error;
+    }
+  }
+
+  // List comments on a pull request
+  async listPullRequestComments(
+    repoOwner: string, 
+    repoName: string, 
+    pullNumber: number
+  ): Promise<PullRequestComment[]> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated with GitHub');
+    }
+
+    try {
+      const { data } = await this.octokit.issues.listComments({
+        owner: repoOwner,
+        repo: repoName,
+        issue_number: pullNumber,
+      });
+
+      return data.map(comment => ({
+        id: comment.id,
+        body: comment.body || '',
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        user: {
+          login: comment.user?.login || 'unknown',
+          avatar_url: comment.user?.avatar_url || '',
+        },
+      }));
+    } catch (error) {
+      console.error('Error listing pull request comments:', error);
       throw error;
     }
   }

@@ -19,6 +19,7 @@ import CollaborationUsersList from '../components/CollaborationUsersList';
 import { CollaborationProvider } from '../contexts/CollaborationContext';
 import { BiNetworkChart, BiX, BiUserCheck } from 'react-icons/bi';
 import PermissionsPanel from '../components/PermissionsPanel';
+import PullRequestPanel from '../components/PullRequestPanel';
 
 // Extend the default theme
 declare module 'styled-components' {
@@ -966,6 +967,15 @@ const EditorPage: React.FC = () => {
         >
           {isPulling ? 'Pulling...' : 'Pull'}
         </ToolbarButton>
+
+        <ToolbarSeparator />
+        
+        <ToolbarButton 
+          onClick={togglePullRequests}
+          className={showPullRequests ? 'active' : ''}
+        >
+          Pull Requests
+        </ToolbarButton>
       </GitToolbar>
     );
   };
@@ -1037,6 +1047,14 @@ const EditorPage: React.FC = () => {
     } finally {
       setIsPulling(false);
     }
+  };
+
+  // Add a state variable for showing/hiding the PR panel
+  const [showPullRequests, setShowPullRequests] = useState<boolean>(false);
+
+  // Add toggle function for the PR panel
+  const togglePullRequests = () => {
+    setShowPullRequests(prev => !prev);
   };
 
   return (
@@ -1281,8 +1299,29 @@ const EditorPage: React.FC = () => {
           </CollaborationPanels>
         </CollaborationProvider>
       </CollaborationSidebar>
+      
+      {showPullRequests && isGitRepo && (
+        <PRSidebar>
+          <PullRequestPanel 
+            repositoryOwner={user?.login || ''}
+            repositoryName={repoName || ''}
+            currentBranch="main" // TODO: Get actual current branch
+          />
+        </PRSidebar>
+      )}
     </PageContainer>
   );
 };
+
+// Add styled component for the PR sidebar
+const PRSidebar = styled.div`
+  width: 350px;
+  height: 100%;
+  border-left: 1px solid ${props => props.theme.colors.border};
+  background-color: ${props => props.theme.colors.background};
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+`;
 
 export default EditorPage; 
