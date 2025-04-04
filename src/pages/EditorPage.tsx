@@ -10,7 +10,16 @@ import { v4 as uuidv4 } from 'uuid';
 import CodeEditor from '../components/CodeEditor';
 import { CodeEditorRef } from '../components/CodeEditor';
 import SearchPanel from '../components/SearchPanel';
-import { getFileExtension, isTextFile, isCodeFile } from '../utils/fileUtils';
+import { 
+  getFileExtension, 
+  isTextFile, 
+  isCodeFile, 
+  getLanguageFromExtension, 
+  PreferredFileType,
+  getDefaultPreferredType,
+  convertContent,
+  getExtensionForPreferredType
+} from '../utils/fileUtils';
 import AgentContainer from '../components/AgentContainer';
 import { useGitHub } from '../contexts/GitHubContext';
 import { githubService, FileStatus, FileDiff, CommitInfo, ConflictInfo } from '../services/githubService';
@@ -60,6 +69,17 @@ interface FileItem {
 // Add content property to TabItem interface by extending it
 interface ExtendedTabItem extends TabItem {
   content?: string;
+  preferredType?: PreferredFileType;
+}
+
+// Update the file contents interface to include preferred type
+interface FileContents {
+  [id: string]: {
+    content: string;
+    cursorPosition?: number;
+    isMarkdownMode: boolean;
+    preferredType: PreferredFileType;
+  };
 }
 
 const PageContainer = styled.div<{ showAgentPanel: boolean }>`
@@ -438,11 +458,13 @@ const EditorPage: React.FC = () => {
     content: string;
     isDirty: boolean;
     isMarkdownMode: boolean;
+    preferredType: PreferredFileType;
   }>>({
     'default-tab': {
       content: '<p>Start typing here...</p>',
       isDirty: false,
-      isMarkdownMode: false
+      isMarkdownMode: false,
+      preferredType: 'automatic'
     }
   });
   
@@ -674,6 +696,73 @@ const EditorPage: React.FC = () => {
     }
   };
 
+  // Add this function to handle file type switching
+  const handleFileTypeChange = (newType: PreferredFileType) => {
+    if (!activeTabId) return;
+    
+    // Get the current tab and content
+    const currentTab = tabs.find(tab => tab.id === activeTabId);
+    if (!currentTab) return;
+    
+    // Get the current file extension and content
+    const currentExtension = currentTab.extension || '';
+    const currentContent = documentContent;
+    
+    // Get old preferred type
+    const oldType = currentTab.preferredType || 'automatic';
+    
+    // Convert content between formats if needed
+    const convertedContent = convertContent(currentContent, oldType, newType);
+    
+    // Get appropriate file extension for the new type
+    const newExtension = getExtensionForPreferredType(newType, currentExtension);
+    
+    // Update the tab with new extension if needed
+    if (currentExtension !== newExtension) {
+      const newFilename = currentTab.name.split('.').slice(0, -1).concat(newExtension).join('.');
+      
+      setTabs(prev => prev.map(tab => {
+        if (tab.id === activeTabId) {
+          return {
+            ...tab,
+            name: newFilename,
+            extension: newExtension,
+            preferredType: newType
+          };
+        }
+        return tab;
+      }));
+      
+      // Also update the filename in the input
+      setFilename(newFilename);
+    } else {
+      // Just update the preferred type
+      setTabs(prev => prev.map(tab => {
+        if (tab.id === activeTabId) {
+          return {
+            ...tab,
+            preferredType: newType
+          };
+        }
+        return tab;
+      }));
+    }
+    
+    // Update content
+    setDocumentContent(convertedContent);
+    
+    // Update file contents
+    setFileContents(prev => ({
+      ...prev,
+      [activeTabId]: {
+        ...prev[activeTabId],
+        content: convertedContent,
+        preferredType: newType
+      }
+    }));
+  };
+
+  // Update handleTabSelect to include preferredType
   const handleTabSelect = (tabId: string) => {
     // Save current tab content
     setFileContents(prev => ({
@@ -681,12 +770,26 @@ const EditorPage: React.FC = () => {
       [activeTabId]: {
         ...prev[activeTabId],
         content: documentContent,
-        isMarkdownMode
+        isMarkdownMode,
+        preferredType: fileContents[tabId].preferredType || 'automatic'
       }
     }));
     
     // Switch to selected tab
     setActiveTabId(tabId);
+    
+    // Update current preferred type from the selected tab
+    const selectedTab = tabs.find(tab => tab.id === tabId);
+    if (selectedTab) {
+      const preferredType = selectedTab.preferredType || 'automatic';
+      setFileContents(prev => ({
+        ...prev,
+        [tabId]: {
+          ...prev[tabId],
+          preferredType
+        }
+      }));
+    }
   };
 
   const handleTabClose = (tabId: string) => {
@@ -709,6 +812,7 @@ const EditorPage: React.FC = () => {
     });
   };
 
+  // Update handleFileSelect to set preferred type
   const handleFileSelect = async (file: FileItem) => {
     if (file.type !== 'file') return;
     
@@ -720,13 +824,17 @@ const EditorPage: React.FC = () => {
       return;
     }
     
+    // Get the default preferred type based on file extension
+    const preferredType = getDefaultPreferredType(file.name);
+    
     // Create a new tab
     const newTab: ExtendedTabItem = {
       id: file.id,
       name: file.name,
       path: file.path,
       extension: file.extension,
-      isDirty: false
+      isDirty: false,
+      preferredType: preferredType
     };
     
     // Load file content from Git repository if in Git mode
@@ -744,6 +852,13 @@ const EditorPage: React.FC = () => {
     
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
+    setFileContents(prev => ({
+      ...prev,
+      [newTab.id]: {
+        ...prev[newTab.id],
+        preferredType
+      }
+    }));
   };
 
   // Handler for undo action
@@ -995,30 +1110,6 @@ const EditorPage: React.FC = () => {
     setCompareBranch(e.target.value);
   };
 
-  // Fix missing utility function
-  const getLanguageForExtension = (extension: string): string => {
-    switch (extension) {
-      case 'js':
-      case 'jsx':
-        return 'javascript';
-      case 'ts':
-      case 'tsx':
-        return 'typescript';
-      case 'py':
-        return 'python';
-      case 'html':
-        return 'html';
-      case 'css':
-        return 'css';
-      case 'json':
-        return 'json';
-      case 'md':
-        return 'markdown';
-      default:
-        return 'plaintext';
-    }
-  };
-
   // Fix renderEditor function to correctly use the CodeEditor and DocumentEditor components
   const renderEditor = () => {
     if (!activeTabId) return null;
@@ -1083,16 +1174,20 @@ const EditorPage: React.FC = () => {
     const filePath = currentTab.path || '';
     const fileExtension = currentTab.extension || '';
     
-    // Simplified hasEditPermission check - you'll need to adapt this based on your actual permissions system
-    const hasEditPermission = true; // This should be replaced with actual permission check
+    // Get the current preferred type (from tab or state)
+    const preferredType = currentTab.preferredType || 'automatic';
     
-    if (isCodeFile(fileExtension)) {
+    // Simplified hasEditPermission check - you'll need to adapt this based on your actual permissions system
+    const hasEditPermission = true;
+    
+    // Use preferred type to determine which editor to show
+    if (preferredType === 'code' || (preferredType === 'automatic' && isCodeFile(fileExtension))) {
       return (
         <CodeEditor
           key={activeTabId}
           code={fileContent}
           onChange={handleCodeChange}
-          language={getLanguageForExtension(fileExtension)}
+          language={getLanguageFromExtension(fileExtension)}
           path={filePath}
           onSave={handleSave}
           ref={codeEditorRef}
@@ -1583,6 +1678,9 @@ const EditorPage: React.FC = () => {
   const [conflictingFiles, setConflictingFiles] = useState<string[]>([]);
   const [isResolvingConflicts, setIsResolvingConflicts] = useState<boolean>(false);
 
+  // Add a state for the current file's preferred type
+  const [currentPreferredType, setCurrentPreferredType] = useState<PreferredFileType>('automatic');
+
   return (
     <PageContainer showAgentPanel={showAgentPanel}>
       <FileBrowser 
@@ -1810,6 +1908,29 @@ const EditorPage: React.FC = () => {
               </ToolbarButton>
             </>
           )}
+          
+          {/* Add a file type switcher dropdown */}
+          <FileTypeSwitcherDropdown>
+            <DropdownButton>
+              File Type: {currentPreferredType === 'automatic' ? 'Auto' : 
+                          currentPreferredType === 'richText' ? 'Rich Text' : 
+                          currentPreferredType === 'markdown' ? 'Markdown' : 'Code'}
+            </DropdownButton>
+            <DropdownContent>
+              <DropdownItem onClick={() => handleFileTypeChange('automatic')}>
+                Auto Detect
+              </DropdownItem>
+              <DropdownItem onClick={() => handleFileTypeChange('richText')}>
+                Rich Text
+              </DropdownItem>
+              <DropdownItem onClick={() => handleFileTypeChange('markdown')}>
+                Markdown
+              </DropdownItem>
+              <DropdownItem onClick={() => handleFileTypeChange('code')}>
+                Code
+              </DropdownItem>
+            </DropdownContent>
+          </FileTypeSwitcherDropdown>
         </EditorToolbar>
         
         <EditorContent>
@@ -2005,6 +2126,11 @@ const StyledSelect = styled.select`
     outline: none;
     border-color: ${props => props.theme.colors.primary};
   }
+`;
+
+// Add a file type switcher dropdown to the toolbar
+const FileTypeSwitcherDropdown = styled(ToolbarDropdown)`
+  margin-left: auto;
 `;
 
 export default EditorPage; 

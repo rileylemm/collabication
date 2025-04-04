@@ -3,6 +3,8 @@ import React from 'react';
 // File type definitions
 export type FileType = 'text' | 'code' | 'unknown';
 export type CodeLanguage = 'javascript' | 'typescript' | 'python' | 'html' | 'css' | 'json' | 'unknown';
+// Add a type for user-preferred file type
+export type PreferredFileType = 'automatic' | 'richText' | 'markdown' | 'code';
 
 // Map of file extensions to file types
 const fileTypeMap: Record<string, FileType> = {
@@ -38,6 +40,13 @@ const codeLanguageMap: Record<string, CodeLanguage> = {
   'json': 'json',
 };
 
+// Map preferred file types to suggested file extensions
+export const preferredTypeToExtension: Record<Exclude<PreferredFileType, 'automatic'>, string> = {
+  'richText': 'txt',
+  'markdown': 'md',
+  'code': 'js', // Default code extension, can be overridden
+};
+
 /**
  * Determines the file type based on the file extension
  * @param filename The name of the file
@@ -66,6 +75,98 @@ export const getCodeLanguage = (filename: string): CodeLanguage => {
 export const useRichTextEditor = (filename: string): boolean => {
   const fileType = getFileType(filename);
   return fileType === 'text';
+};
+
+/**
+ * Gets the appropriate file extension based on the preferred file type
+ * @param preferredType The preferred file type
+ * @param currentExtension The current file extension (used for code files to preserve language)
+ * @returns The suggested file extension
+ */
+export const getExtensionForPreferredType = (
+  preferredType: PreferredFileType, 
+  currentExtension?: string
+): string => {
+  if (preferredType === 'automatic') {
+    return currentExtension || 'txt';
+  }
+  
+  if (preferredType === 'code' && currentExtension && isCodeFile(currentExtension)) {
+    // Preserve the current code extension if it's valid
+    return currentExtension;
+  }
+  
+  return preferredTypeToExtension[preferredType];
+};
+
+/**
+ * Converts content between different file types
+ * @param content The current content
+ * @param fromType The current file type
+ * @param toType The target file type
+ * @returns The converted content
+ */
+export const convertContent = (
+  content: string,
+  fromType: PreferredFileType,
+  toType: PreferredFileType
+): string => {
+  // Skip conversion if types are the same or using automatic
+  if (fromType === toType || fromType === 'automatic' || toType === 'automatic') {
+    return content;
+  }
+  
+  // Convert from rich text to markdown or code
+  if (fromType === 'richText') {
+    if (toType === 'markdown') {
+      // This is a simplified conversion - a real implementation would need
+      // more sophisticated conversion based on your rich text format
+      return content.replace(/<h1>(.*?)<\/h1>/g, '# $1')
+                   .replace(/<h2>(.*?)<\/h2>/g, '## $1')
+                   .replace(/<p>(.*?)<\/p>/g, '$1\n\n')
+                   .replace(/<strong>(.*?)<\/strong>/g, '**$1**')
+                   .replace(/<em>(.*?)<\/em>/g, '*$1*')
+                   .replace(/<ul>(.*?)<\/ul>/gs, (_, list) => {
+                     return list.replace(/<li>(.*?)<\/li>/g, '- $1\n');
+                   });
+    }
+    if (toType === 'code') {
+      // Strip HTML tags for code
+      return content.replace(/<[^>]+>/g, '');
+    }
+  }
+  
+  // Convert from markdown to rich text or code
+  if (fromType === 'markdown') {
+    if (toType === 'richText') {
+      // This is a simplified conversion
+      return content.replace(/^# (.*?)$/gm, '<h1>$1</h1>')
+                   .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
+                   .replace(/^- (.*?)$/gm, '<li>$1</li>')
+                   .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                   .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                   .replace(/([^\n]+)\n\n/g, '<p>$1</p>');
+    }
+    if (toType === 'code') {
+      // For markdown to code, we just pass the raw markdown
+      return content;
+    }
+  }
+  
+  // Convert from code to rich text or markdown
+  if (fromType === 'code') {
+    if (toType === 'richText') {
+      // Wrap in code block
+      return `<pre><code>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+    }
+    if (toType === 'markdown') {
+      // Wrap in markdown code fence
+      return '```\n' + content + '\n```';
+    }
+  }
+  
+  // Default case - return original content
+  return content;
 };
 
 /**
@@ -121,6 +222,25 @@ export const getContentType = (filename: string): 'code' | 'text' | 'binary' => 
     return 'text';
   } else {
     return 'binary';
+  }
+};
+
+/**
+ * Get the default preferred file type based on the file extension
+ * @param filename The filename
+ * @returns The default preferred file type
+ */
+export const getDefaultPreferredType = (filename: string): PreferredFileType => {
+  const extension = getFileExtension(filename);
+  
+  if (extension === 'md' || extension === 'markdown') {
+    return 'markdown';
+  } else if (isTextFile(extension)) {
+    return 'richText';
+  } else if (isCodeFile(extension)) {
+    return 'code';
+  } else {
+    return 'automatic';
   }
 };
 

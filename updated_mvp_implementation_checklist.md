@@ -267,7 +267,7 @@ Based on code review, the project has the following status:
 - [x] Connect real-time collaboration with editor
   - [x] Integrate Yjs with the editor components
   - [x] Add collaboration UI elements
-- [ ] Implement file type switching with state preservation
+- [x] Implement file type switching with state preservation
 - [ ] Create unified project management interface
 - [ ] Add settings synchronization across components
 - [ ] Implement unified search across all content
