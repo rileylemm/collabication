@@ -37,11 +37,19 @@ export interface UISettings {
   showStatusBar: boolean;
 }
 
+// Define the structure for keyboard shortcut settings
+export interface KeyboardShortcutSettings {
+  enableShortcuts: boolean;
+  showShortcutsHelp: boolean;
+  customizeShortcuts: boolean;
+}
+
 export interface ApplicationSettings {
   editor: EditorSettings;
   github: GitHubSettings;
   collaboration: CollaborationSettings;
   ui: UISettings;
+  keyboardShortcuts: KeyboardShortcutSettings;
 }
 
 // Default settings
@@ -81,11 +89,20 @@ const defaultUISettings: UISettings = {
   showStatusBar: true,
 };
 
+// Add default keyboard shortcut settings
+const defaultKeyboardShortcutSettings: KeyboardShortcutSettings = {
+  enableShortcuts: true,
+  showShortcutsHelp: true,
+  customizeShortcuts: true,
+};
+
+// Update defaultSettings to include keyboard shortcuts
 const defaultSettings: ApplicationSettings = {
   editor: defaultEditorSettings,
   github: defaultGitHubSettings,
   collaboration: defaultCollaborationSettings,
   ui: defaultUISettings,
+  keyboardShortcuts: defaultKeyboardShortcutSettings,
 };
 
 // Context type definition
@@ -129,6 +146,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
             github: { ...defaultGitHubSettings, ...parsedSettings.github },
             collaboration: { ...defaultCollaborationSettings, ...parsedSettings.collaboration },
             ui: { ...defaultUISettings, ...parsedSettings.ui },
+            keyboardShortcuts: { ...defaultKeyboardShortcutSettings, ...parsedSettings.keyboardShortcuts },
           };
         }
       }
