@@ -324,6 +324,10 @@ Based on code review, the project has the following status:
 - [ ] Add troubleshooting documentation
 - [ ] Create video tutorials for key features
 - [ ] Implement in-app help system
+- [x] Create an installation guide
+- [x] Create update documentation
+- [ ] Create user guides
+- [ ] API documentation
 
 ## Performance Requirements
 - [ ] Ensure document loading times under 2 seconds
