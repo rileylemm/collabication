@@ -10,6 +10,7 @@ import EditorPage from './pages/EditorPage';
 import GitHubPage from './pages/GitHubPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { GitHubProvider } from './contexts/GitHubContext';
+import ProjectManagementPage from './pages/ProjectManagementPage';
 
 const AppContent = () => {
   const { theme } = useTheme();
@@ -23,6 +24,7 @@ const AppContent = () => {
           <Route index element={<HomePage />} />
           <Route path="editor" element={<EditorPage />} />
           <Route path="github" element={<GitHubPage />} />
+          <Route path="projects" element={<ProjectManagementPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

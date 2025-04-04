@@ -62,6 +62,12 @@ const ActionButton = styled(Link)`
   }
 `;
 
+const ActionButtonsContainer = styled.div`
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+`;
+
 const HomePage: React.FC = () => {
   return (
     <HomeContainer>
@@ -93,7 +99,10 @@ const HomePage: React.FC = () => {
         </FeatureItem>
       </FeatureList>
       
-      <ActionButton to="/editor">Create New Document</ActionButton>
+      <ActionButtonsContainer>
+        <ActionButton to="/editor">Create New Document</ActionButton>
+        <ActionButton to="/projects">Manage Projects</ActionButton>
+      </ActionButtonsContainer>
     </HomeContainer>
   );
 };
