@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { getFileName } from '../utils/fileUtils';
 import { Theme } from '../styles/theme';
+import { FileStatus } from '../services/githubService';
 
 // Extend the default theme
 declare module 'styled-components' {
@@ -17,6 +18,7 @@ interface FileItem {
   extension?: string;
   children?: FileItem[];
   isOpen?: boolean;
+  status?: FileStatus;
 }
 
 interface FileBrowserProps {
@@ -123,6 +125,63 @@ const FileName = styled.span`
   white-space: nowrap;
   color: ${props => props.theme.colors.text};
   font-size: ${props => props.theme.fontSizes.small};
+  flex: 1;
+`;
+
+const StatusIndicator = styled.span<{ status: FileStatus }>`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 6px;
+  background-color: ${props => {
+    switch (props.status) {
+      case 'modified':
+        return '#F9A825'; // Yellow for modified
+      case 'added':
+        return '#4CAF50'; // Green for added
+      case 'deleted':
+        return '#F44336'; // Red for deleted
+      case 'untracked':
+        return '#9E9E9E'; // Gray for untracked
+      default:
+        return 'transparent';
+    }
+  }};
+`;
+
+const StatusLabel = styled.span<{ status: FileStatus }>`
+  font-size: 10px;
+  margin-left: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background-color: ${props => {
+    switch (props.status) {
+      case 'modified':
+        return '#FFF8E1'; // Light yellow background for modified
+      case 'added':
+        return '#E8F5E9'; // Light green background for added
+      case 'deleted':
+        return '#FFEBEE'; // Light red background for deleted
+      case 'untracked':
+        return '#F5F5F5'; // Light gray background for untracked
+      default:
+        return 'transparent';
+    }
+  }};
+  color: ${props => {
+    switch (props.status) {
+      case 'modified':
+        return '#F57F17'; // Dark yellow for modified
+      case 'added':
+        return '#2E7D32'; // Dark green for added
+      case 'deleted':
+        return '#C62828'; // Dark red for deleted
+      case 'untracked':
+        return '#616161'; // Dark gray for untracked
+      default:
+        return 'inherit';
+    }
+  }};
 `;
 
 const EmptyState = styled.div`
@@ -135,6 +194,22 @@ const EmptyState = styled.div`
   color: ${props => props.theme.colors.textSecondary};
   text-align: center;
 `;
+
+// Get short status label
+const getStatusLabel = (status?: FileStatus): string => {
+  switch (status) {
+    case 'modified':
+      return 'M';
+    case 'added':
+      return 'A';
+    case 'deleted':
+      return 'D';
+    case 'untracked':
+      return 'U';
+    default:
+      return '';
+  }
+};
 
 const FileTreeItem: React.FC<{
   item: FileItem;
@@ -154,6 +229,15 @@ const FileTreeItem: React.FC<{
     }
   };
   
+  // Check if any children in a folder have status
+  const hasFolderStatus = (): boolean => {
+    if (item.type !== 'folder' || !item.children) return false;
+    return item.children.some(child => 
+      child.status || 
+      (child.type === 'folder' && child.children && child.children.some(c => c.status))
+    );
+  };
+  
   return (
     <>
       <FileItemContainer 
@@ -162,11 +246,23 @@ const FileTreeItem: React.FC<{
         onClick={handleClick}
       >
         {item.type === 'folder' ? (
-          <FolderIcon>{item.isOpen ? '📂' : '📁'}</FolderIcon>
+          <FolderIcon>
+            {item.isOpen ? (hasFolderStatus() ? '📂*' : '📂') : (hasFolderStatus() ? '📁*' : '📁')}
+          </FolderIcon>
         ) : (
           <FileIcon extension={extension}>📄</FileIcon>
         )}
         <FileName>{item.name}</FileName>
+        
+        {/* Display status indicator for files */}
+        {item.type === 'file' && item.status && (
+          <>
+            <StatusIndicator status={item.status} />
+            <StatusLabel status={item.status}>
+              {getStatusLabel(item.status)}
+            </StatusLabel>
+          </>
+        )}
       </FileItemContainer>
       
       {item.type === 'folder' && item.isOpen && item.children && (
