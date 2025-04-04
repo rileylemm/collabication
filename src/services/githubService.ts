@@ -68,6 +68,39 @@ export interface PullRequestComment {
   };
 }
 
+// Add a new interface for file differences
+export interface FileDiff {
+  path: string;
+  oldFile: string;
+  newFile: string;
+  changes: Array<{
+    type: 'added' | 'removed' | 'unchanged';
+    content: string;
+    lineNumber: {
+      old: number | null;
+      new: number | null;
+    };
+  }>;
+}
+
+// Add a new interface for commit history
+export interface CommitInfo {
+  oid: string;
+  message: string;
+  author: {
+    name: string;
+    email: string;
+    timestamp: number;
+  };
+  committer: {
+    name: string;
+    email: string;
+    timestamp: number;
+  };
+  files?: string[]; // Files changed in this commit
+  parentSHA?: string; // The parent commit SHA
+}
+
 // Helper function to initialize git configuration
 const initGitConfig = async (userName: string, userEmail: string) => {
   await git.setConfig({
@@ -732,6 +765,508 @@ class GitHubService {
       }));
     } catch (error) {
       console.error('Error listing pull request comments:', error);
+      throw error;
+    }
+  }
+
+  // Get the diff between two strings
+  private computeDiff(oldStr: string, newStr: string): Array<{
+    type: 'added' | 'removed' | 'unchanged';
+    content: string;
+    lineNumber: { old: number | null; new: number | null };
+  }> {
+    // Split both strings into lines
+    const oldLines = oldStr.split('\n');
+    const newLines = newStr.split('\n');
+    
+    const changes: Array<{
+      type: 'added' | 'removed' | 'unchanged';
+      content: string;
+      lineNumber: { old: number | null; new: number | null };
+    }> = [];
+    
+    // Simple diff algorithm (this can be improved for better accuracy)
+    let oldIndex = 0;
+    let newIndex = 0;
+    
+    // Maximum number of lines to look ahead for finding matches
+    const lookAhead = 10;
+    
+    while (oldIndex < oldLines.length || newIndex < newLines.length) {
+      if (oldIndex < oldLines.length && newIndex < newLines.length && oldLines[oldIndex] === newLines[newIndex]) {
+        // Lines are the same, mark as unchanged
+        changes.push({
+          type: 'unchanged',
+          content: oldLines[oldIndex],
+          lineNumber: {
+            old: oldIndex + 1,
+            new: newIndex + 1
+          }
+        });
+        oldIndex++;
+        newIndex++;
+      } else {
+        // Lines differ, look ahead to see if we can find a match
+        let foundMatch = false;
+        let oldLookAhead = 0;
+        let newLookAhead = 0;
+        
+        // Look ahead in the new file for a match with the current old line
+        for (let i = 1; i <= lookAhead && newIndex + i < newLines.length; i++) {
+          if (oldLines[oldIndex] === newLines[newIndex + i]) {
+            foundMatch = true;
+            newLookAhead = i;
+            break;
+          }
+        }
+        
+        // Look ahead in the old file for a match with the current new line
+        for (let i = 1; i <= lookAhead && oldIndex + i < oldLines.length; i++) {
+          if (oldLines[oldIndex + i] === newLines[newIndex]) {
+            // If we already found a match in the new file, use the shorter path
+            if (foundMatch && i >= newLookAhead) break;
+            
+            foundMatch = true;
+            oldLookAhead = i;
+            newLookAhead = 0;
+            break;
+          }
+        }
+        
+        // Add the removed lines
+        for (let i = 0; i < oldLookAhead; i++) {
+          changes.push({
+            type: 'removed',
+            content: oldLines[oldIndex + i],
+            lineNumber: {
+              old: oldIndex + i + 1,
+              new: null
+            }
+          });
+        }
+        
+        // Add the added lines
+        for (let i = 0; i < newLookAhead; i++) {
+          changes.push({
+            type: 'added',
+            content: newLines[newIndex + i],
+            lineNumber: {
+              old: null,
+              new: newIndex + i + 1
+            }
+          });
+        }
+        
+        // Update the indices
+        if (oldLookAhead > 0) {
+          oldIndex += oldLookAhead;
+        } else if (newLookAhead > 0) {
+          newIndex += newLookAhead;
+        } else {
+          // If no match found, assume the line was changed
+          if (oldIndex < oldLines.length) {
+            changes.push({
+              type: 'removed',
+              content: oldLines[oldIndex],
+              lineNumber: {
+                old: oldIndex + 1,
+                new: null
+              }
+            });
+            oldIndex++;
+          }
+          
+          if (newIndex < newLines.length) {
+            changes.push({
+              type: 'added',
+              content: newLines[newIndex],
+              lineNumber: {
+                old: null,
+                new: newIndex + 1
+              }
+            });
+            newIndex++;
+          }
+        }
+      }
+    }
+    
+    return changes;
+  }
+  
+  // Get diff between working directory and HEAD for a file
+  async getUncommittedDiff(repositoryName: string, filepath: string): Promise<FileDiff> {
+    try {
+      // Get the file content from HEAD
+      let oldContent = '';
+      try {
+        const result = await git.readBlob({
+          fs,
+          dir: `/${repositoryName}`,
+          oid: 'HEAD',
+          filepath
+        });
+        // Correctly access the blob data
+        oldContent = Buffer.from(result.blob).toString('utf8');
+      } catch (error) {
+        // File might not exist in HEAD (new file)
+        oldContent = '';
+      }
+      
+      // Get the file content from working directory
+      let newContent = '';
+      try {
+        newContent = await this.readFile(repositoryName, filepath);
+      } catch (error) {
+        // File might be deleted in working directory
+        newContent = '';
+      }
+      
+      // Compute the diff
+      const changes = this.computeDiff(oldContent, newContent);
+      
+      return {
+        path: filepath,
+        oldFile: oldContent,
+        newFile: newContent,
+        changes
+      };
+    } catch (error) {
+      console.error('Error getting uncommitted diff:', error);
+      throw error;
+    }
+  }
+  
+  // Get diff between two commits for a file
+  async getCommitDiff(
+    repositoryName: string, 
+    filepath: string, 
+    oldCommit: string, 
+    newCommit: string
+  ): Promise<FileDiff> {
+    try {
+      // Get the file content from old commit
+      let oldContent = '';
+      try {
+        const result = await git.readBlob({
+          fs,
+          dir: `/${repositoryName}`,
+          oid: oldCommit,
+          filepath
+        });
+        // Correctly access the blob data
+        oldContent = Buffer.from(result.blob).toString('utf8');
+      } catch (error) {
+        // File might not exist in old commit
+        oldContent = '';
+      }
+      
+      // Get the file content from new commit
+      let newContent = '';
+      try {
+        const result = await git.readBlob({
+          fs,
+          dir: `/${repositoryName}`,
+          oid: newCommit,
+          filepath
+        });
+        // Correctly access the blob data
+        newContent = Buffer.from(result.blob).toString('utf8');
+      } catch (error) {
+        // File might not exist in new commit
+        newContent = '';
+      }
+      
+      // Compute the diff
+      const changes = this.computeDiff(oldContent, newContent);
+      
+      return {
+        path: filepath,
+        oldFile: oldContent,
+        newFile: newContent,
+        changes
+      };
+    } catch (error) {
+      console.error('Error getting commit diff:', error);
+      throw error;
+    }
+  }
+  
+  // Get diff between two branches for a file
+  async getBranchDiff(
+    repositoryName: string,
+    filepath: string,
+    baseBranch: string,
+    compareBranch: string
+  ): Promise<FileDiff> {
+    try {
+      // Get the commit SHA for the base branch
+      const baseRef = await git.resolveRef({
+        fs,
+        dir: `/${repositoryName}`,
+        ref: baseBranch
+      });
+      
+      // Get the commit SHA for the compare branch
+      const compareRef = await git.resolveRef({
+        fs,
+        dir: `/${repositoryName}`,
+        ref: compareBranch
+      });
+      
+      // Use the commit diff method to get the diff
+      return this.getCommitDiff(repositoryName, filepath, baseRef, compareRef);
+    } catch (error) {
+      console.error('Error getting branch diff:', error);
+      throw error;
+    }
+  }
+  
+  // Get a list of files modified between two commits
+  async getModifiedFiles(
+    repositoryName: string,
+    oldCommit: string,
+    newCommit: string
+  ): Promise<string[]> {
+    try {
+      const results = await git.walk({
+        fs,
+        dir: `/${repositoryName}`,
+        trees: [git.TREE({ ref: oldCommit }), git.TREE({ ref: newCommit })],
+        map: async (filepath, [oldTree, newTree]) => {
+          // Skip directories
+          if (filepath === '.') return;
+          
+          // If either is null or they don't match, the file was changed
+          if (!oldTree || !newTree || oldTree.oid !== newTree.oid) {
+            return filepath;
+          }
+          return;
+        }
+      });
+      
+      // Filter out undefined values and return the list of modified files
+      return results.filter(Boolean) as string[];
+    } catch (error) {
+      console.error('Error getting modified files:', error);
+      throw error;
+    }
+  }
+
+  // Get commit history for a repository
+  async getCommitHistory(
+    repositoryName: string,
+    branch: string = 'main',
+    depth: number = 20,
+    filePath?: string
+  ): Promise<CommitInfo[]> {
+    try {
+      // Get the commit log
+      const commits = await git.log({
+        fs,
+        dir: `/${repositoryName}`,
+        ref: branch,
+        depth,
+        filepath: filePath,
+      });
+      
+      // Get details for each commit
+      const commitDetails: CommitInfo[] = [];
+      
+      for (const commit of commits) {
+        // For each commit, get the list of files changed
+        let files: string[] = [];
+        
+        if (commit.oid && commit.commit.parent && commit.commit.parent.length > 0) {
+          try {
+            // Get files changed between this commit and its parent
+            const parentSha = commit.commit.parent[0];
+            files = await this.getModifiedFiles(repositoryName, parentSha, commit.oid);
+          } catch (error) {
+            console.error('Error getting modified files for commit:', error);
+          }
+        }
+        
+        const commitInfo: CommitInfo = {
+          oid: commit.oid,
+          message: commit.commit.message,
+          author: {
+            name: commit.commit.author.name,
+            email: commit.commit.author.email,
+            timestamp: commit.commit.author.timestamp,
+          },
+          committer: {
+            name: commit.commit.committer.name,
+            email: commit.commit.committer.email,
+            timestamp: commit.commit.committer.timestamp,
+          },
+          files,
+          parentSHA: commit.commit.parent && commit.commit.parent.length > 0 
+            ? commit.commit.parent[0] 
+            : undefined,
+        };
+        
+        commitDetails.push(commitInfo);
+      }
+      
+      return commitDetails;
+    } catch (error) {
+      console.error('Error getting commit history:', error);
+      throw error;
+    }
+  }
+  
+  // Get details for a specific commit
+  async getCommitDetails(
+    repositoryName: string,
+    commitSha: string
+  ): Promise<CommitInfo> {
+    try {
+      // Read the commit object with proper type handling
+      const result = await git.readObject({
+        fs,
+        dir: `/${repositoryName}`,
+        oid: commitSha,
+        format: 'parsed',
+      });
+      
+      // Check if the result is a commit object
+      if (result.type !== 'commit') {
+        throw new Error(`Object ${commitSha} is not a commit`);
+      }
+      
+      // Use type assertion to treat the object as a CommitObject
+      // This approach works because we've already verified result.type === 'commit'
+      const commitObject = result.object as {
+        message: string;
+        author: {
+          name: string;
+          email: string;
+          timestamp: number;
+        };
+        committer: {
+          name: string;
+          email: string;
+          timestamp: number;
+        };
+        parent: string[];
+      };
+      
+      // Get files changed in this commit
+      let files: string[] = [];
+      if (commitObject.parent && commitObject.parent.length > 0) {
+        try {
+          // Get files changed between this commit and its parent
+          const parentSha = commitObject.parent[0];
+          files = await this.getModifiedFiles(repositoryName, parentSha, commitSha);
+        } catch (error) {
+          console.error('Error getting modified files for commit:', error);
+        }
+      }
+      
+      return {
+        oid: commitSha,
+        message: commitObject.message,
+        author: {
+          name: commitObject.author.name,
+          email: commitObject.author.email,
+          timestamp: commitObject.author.timestamp,
+        },
+        committer: {
+          name: commitObject.committer.name,
+          email: commitObject.committer.email,
+          timestamp: commitObject.committer.timestamp,
+        },
+        files,
+        parentSHA: commitObject.parent && commitObject.parent.length > 0 
+          ? commitObject.parent[0] 
+          : undefined,
+      };
+    } catch (error) {
+      console.error('Error getting commit details:', error);
+      throw error;
+    }
+  }
+  
+  // Check out a specific commit
+  async checkoutCommit(
+    repositoryName: string,
+    commitSha: string
+  ): Promise<void> {
+    try {
+      await git.checkout({
+        fs,
+        dir: `/${repositoryName}`,
+        ref: commitSha,
+      });
+    } catch (error) {
+      console.error('Error checking out commit:', error);
+      throw error;
+    }
+  }
+  
+  // Get commit message
+  async getCommitMessage(
+    repositoryName: string,
+    commitSha: string
+  ): Promise<string> {
+    try {
+      const commitInfo = await this.getCommitDetails(repositoryName, commitSha);
+      return commitInfo.message;
+    } catch (error) {
+      console.error('Error getting commit message:', error);
+      throw error;
+    }
+  }
+  
+  // Check out a specific branch
+  async checkoutBranch(
+    repositoryName: string,
+    branchName: string
+  ): Promise<void> {
+    try {
+      await git.checkout({
+        fs,
+        dir: `/${repositoryName}`,
+        ref: branchName,
+      });
+    } catch (error) {
+      console.error('Error checking out branch:', error);
+      throw error;
+    }
+  }
+  
+  // Delete a branch
+  async deleteBranch(
+    repositoryName: string,
+    branchName: string
+  ): Promise<void> {
+    try {
+      await git.deleteBranch({
+        fs,
+        dir: `/${repositoryName}`,
+        ref: branchName,
+      });
+    } catch (error) {
+      console.error('Error deleting branch:', error);
+      throw error;
+    }
+  }
+  
+  // Get current branch name
+  async getCurrentBranch(
+    repositoryName: string
+  ): Promise<string> {
+    try {
+      const currentBranch = await git.currentBranch({
+        fs,
+        dir: `/${repositoryName}`,
+        fullname: false,
+      });
+      
+      return currentBranch || 'HEAD';
+    } catch (error) {
+      console.error('Error getting current branch:', error);
       throw error;
     }
   }
