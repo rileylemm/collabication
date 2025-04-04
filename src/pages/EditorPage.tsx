@@ -13,17 +13,18 @@ import SearchPanel from '../components/SearchPanel';
 import { getFileExtension, isTextFile, isCodeFile } from '../utils/fileUtils';
 import AgentContainer from '../components/AgentContainer';
 import { useGitHub } from '../contexts/GitHubContext';
-import { githubService, FileStatus, FileDiff } from '../services/githubService';
+import { githubService, FileStatus, FileDiff, CommitInfo, ConflictInfo } from '../services/githubService';
 import CollaborationStatus from '../components/CollaborationStatus';
 import CollaborationUsersList from '../components/CollaborationUsersList';
 import { CollaborationProvider } from '../contexts/CollaborationContext';
-import { BiNetworkChart, BiX, BiUserCheck, BiGitCompare, BiHistory } from 'react-icons/bi';
+import { BiNetworkChart, BiX, BiUserCheck, BiGitCompare, BiHistory, BiGitBranch } from 'react-icons/bi';
 import PermissionsPanel from '../components/PermissionsPanel';
 import PullRequestPanel from '../components/PullRequestPanel';
 import DiffViewer from '../components/DiffViewer';
 import AgentPanel from '../components/AgentPanel';
 import FileTreeView from '../components/FileTreeView';
 import CommitHistoryPanel from '../components/CommitHistoryPanel';
+import BranchManager from '../components/BranchManager';
 import { AiOutlineRobot, AiOutlineHistory } from 'react-icons/ai';
 import {
   Box,
@@ -35,6 +36,9 @@ import {
   VStack
 } from '@chakra-ui/react';
 import { toast } from 'react-hot-toast';
+import GitStatusBar from '../components/GitStatusBar';
+import * as git from 'isomorphic-git';
+import VersionControlPanel from '../components/VersionControlPanel';
 
 // Extend the default theme
 declare module 'styled-components' {
@@ -1172,15 +1176,33 @@ const EditorPage: React.FC = () => {
     setShowPermissions(prev => !prev);
   };
 
-  // Add the missing Git-related functions to the EditorPage component
+  // Add the enhanced saveToGit function
   const saveToGit = async (filePath: string, content: string) => {
     if (!repoName) return;
     
     try {
+      // Display saving notification
+      toast.loading("Saving file...");
+      
+      // Write file content
       await githubService.writeFile(repoName, filePath, content);
+      
+      // Stage the file for commit
+      await githubService.addFile(repoName, filePath);
+      
+      // Refresh Git status to update UI
       await refreshGitStatus(repoName);
+      
+      // Display success notification
+      toast.success("File saved and staged for commit");
     } catch (error) {
       console.error('Error saving to git:', error);
+      
+      // Display error notification
+      toast.error(`Save failed: ${String(error)}`);
+    } finally {
+      // Dismiss the loading toast
+      toast.dismiss();
     }
   };
 
@@ -1223,13 +1245,144 @@ const EditorPage: React.FC = () => {
     
     try {
       setIsPulling(true);
-      // Add token parameter
-      await githubService.pull(repoName, token);
-      await loadGitRepository(repoName);
+      
+      // Use the enhanced pull with conflict detection
+      const result = await githubService.pullWithConflictDetection(repoName, token, currentBranch);
+      
+      if (result.success) {
+        // No conflicts, refresh the repository
+        await loadGitRepository(repoName);
+        toast({
+          title: 'Pull successful',
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        // Conflicts detected
+        setConflictingFiles(result.conflictingFiles);
+        setShowVersionControl(true); // Show the version control panel
+        toast({
+          title: 'Merge conflicts detected',
+          description: `${result.conflictingFiles.length} file(s) have merge conflicts that need resolution.`,
+          status: 'warning',
+          duration: 5000,
+          isClosable: true,
+        });
+      }
     } catch (error) {
       console.error('Error pulling changes:', error);
+      toast({
+        title: 'Error pulling changes',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     } finally {
       setIsPulling(false);
+    }
+  };
+
+  // Add handler for resolving conflicts
+  const handleResolveConflict = async (
+    filepath: string, 
+    resolution: 'ours' | 'theirs' | 'custom', 
+    customContent?: string
+  ) => {
+    if (!repoName) return;
+    
+    try {
+      setIsResolvingConflicts(true);
+      await githubService.resolveConflict(repoName, filepath, resolution, customContent);
+      
+      // Update the list of conflicting files
+      setConflictingFiles(prev => prev.filter(file => file !== filepath));
+      
+      toast({
+        title: 'Conflict resolved',
+        description: `Successfully resolved conflicts in ${filepath}`,
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error) {
+      console.error('Error resolving conflict:', error);
+      toast({
+        title: 'Error resolving conflict',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsResolvingConflicts(false);
+    }
+  };
+
+  // Add handler for completing conflict resolution
+  const handleCompleteResolution = async (commitMessage: string) => {
+    if (!repoName || !user) return;
+    
+    try {
+      setIsResolvingConflicts(true);
+      
+      // Complete the conflict resolution with a commit
+      await githubService.completeConflictResolution(
+        repoName, 
+        commitMessage,
+        {
+          name: user.name || user.login,
+          email: `${user.login}@github.com`
+        }
+      );
+      
+      // Clear conflict state
+      setConflictingFiles([]);
+      
+      // Refresh the repository
+      await refreshGitStatus(repoName);
+      
+      toast({
+        title: 'Conflicts resolved',
+        description: 'All conflicts have been successfully resolved.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error) {
+      console.error('Error completing conflict resolution:', error);
+      toast({
+        title: 'Error completing conflict resolution',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsResolvingConflicts(false);
+    }
+  };
+
+  // Add handler for canceling conflict resolution
+  const handleCancelResolution = () => {
+    setConflictingFiles([]);
+  };
+
+  // Add handler for getting conflict info for a file
+  const handleGetConflictInfo = async (repositoryName: string, filepath: string) => {
+    try {
+      return await githubService.getConflictInfo(repositoryName, filepath);
+    } catch (error) {
+      console.error('Error getting conflict info:', error);
+      toast({
+        title: 'Error getting conflict info',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+      return null;
     }
   };
 
@@ -1351,11 +1504,91 @@ const EditorPage: React.FC = () => {
     }
   };
 
+  // Inside the EditorPage component, add a state for showing branch manager
+  const [showBranchManager, setShowBranchManager] = useState<boolean>(false);
+
+  // Add a toggle function for branch manager
+  const toggleBranchManager = () => {
+    setShowBranchManager(prev => !prev);
+  };
+
+  // Update the handleBranchChange function to refresh Git status
+  const handleBranchChange = async (branchName: string) => {
+    // Update the current branch in state
+    setCurrentBranch(branchName);
+    
+    // Refresh Git status for the new branch
+    if (repoName) {
+      await refreshGitStatus(repoName);
+    }
+  };
+
+  // Add handler for staging/unstaging files
+  const handleStageFile = async (filepath: string, staged: boolean) => {
+    if (!repoName) return;
+    
+    try {
+      if (staged) {
+        await githubService.addFile(repoName, filepath);
+      } else {
+        await githubService.unstageFile(repoName, filepath);
+      }
+      refreshGitStatus();
+    } catch (error) {
+      console.error('Error staging file:', error);
+      toast({
+        title: 'Failed to stage file',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
+  // Add state for version control panel visibility
+  const [showVersionControl, setShowVersionControl] = useState(false);
+
+  // Add toggle function
+  const toggleVersionControl = () => {
+    setShowVersionControl(!showVersionControl);
+  };
+
+  // Add styled component for toggle button
+  const VersionControlToggleButton = styled.button`
+    position: fixed;
+    bottom: 1rem;
+    right: ${props => props.showAgentPanel ? '360px' : '70px'};
+    z-index: 10;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background-color: ${props => props.theme.colors.secondary};
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    transition: right 0.3s ease;
+    
+    &:hover {
+      background-color: ${props => props.theme.colors.secondaryDark};
+    }
+  `;
+
+  // Add state for conflict resolution
+  const [conflictingFiles, setConflictingFiles] = useState<string[]>([]);
+  const [isResolvingConflicts, setIsResolvingConflicts] = useState<boolean>(false);
+
   return (
     <PageContainer showAgentPanel={showAgentPanel}>
       <FileBrowser 
         files={gitFiles}
         onFileSelect={handleFileSelect}
+        selectedFilePath={selectedFilePath}
       />
       
       <EditorContainer>
@@ -1526,10 +1759,10 @@ const EditorPage: React.FC = () => {
           </ToolbarButton>
           
           {/* GitHub-related buttons */}
-          {gitHubAuth && selectedRepository && (
+          {gitHubAuth && repoName && (
             <>
               <ToolbarButton
-                onClick={refreshGitStatus}
+                onClick={() => refreshGitStatus(repoName)}
                 disabled={isGitOperationInProgress}
                 title="Refresh Git Status"
               >
@@ -1559,6 +1792,14 @@ const EditorPage: React.FC = () => {
               >
                 <BiHistory /> History
               </ToolbarButton>
+
+              <ToolbarButton
+                onClick={toggleBranchManager}
+                active={showBranchManager}
+                title="Branch Manager"
+              >
+                <BiGitBranch /> Branches
+              </ToolbarButton>
             </>
           )}
         </EditorToolbar>
@@ -1575,6 +1816,22 @@ const EditorPage: React.FC = () => {
             onReplaceAll={undefined}
           />
         </EditorContent>
+
+        {/* Add GitStatusBar for GitHub integration */}
+        {repoName && (
+          <GitStatusBar
+            modifiedFiles={modifiedFiles}
+            commitMessage={commitMessage}
+            onCommitMessageChange={setCommitMessage}
+            onStageFile={handleStageFile}
+            onCommit={handleCommit}
+            onPush={handlePush}
+            onPull={handlePull}
+            isCommitting={isCommitting}
+            isPushing={isPushing}
+            isPulling={isPulling}
+          />
+        )}
       </EditorContainer>
       
       {/* Agent panel */}
@@ -1646,14 +1903,59 @@ const EditorPage: React.FC = () => {
         </PRSidebar>
       )}
       
-      {showCommitHistory && selectedRepository && (
+      {showCommitHistory && repoName && (
         <div style={{ width: '600px', height: '100%', overflowY: 'auto', borderLeft: '1px solid #E2E8F0' }}>
           <CommitHistoryPanel
-            repositoryName={selectedRepository}
-            currentBranch={selectedBranch}
+            repositoryName={repoName}
+            currentBranch={currentBranch}
             onClose={() => setShowCommitHistory(false)}
           />
         </div>
+      )}
+
+      {showBranchManager && repoName && (
+        <div style={{ width: '300px', height: '100%', overflowY: 'auto', borderLeft: '1px solid #E2E8F0' }}>
+          <BranchManager
+            repositoryName={repoName}
+            onBranchChange={handleBranchChange}
+          />
+        </div>
+      )}
+
+      {/* Version control toggle button */}
+      {repoName && (
+        <VersionControlToggleButton 
+          onClick={toggleVersionControl}
+          showAgentPanel={showAgentPanel}
+        >
+          <BiGitBranch />
+        </VersionControlToggleButton>
+      )}
+
+      {/* Version Control Panel */}
+      {repoName && (
+        <VersionControlPanel
+          repositoryName={repoName}
+          currentBranch={currentBranch}
+          modifiedFiles={modifiedFiles}
+          conflictingFiles={conflictingFiles}
+          commitMessage={commitMessage}
+          onCommitMessageChange={setCommitMessage}
+          onStageFile={handleStageFile}
+          onCommit={handleCommit}
+          onPush={handlePush}
+          onPull={handlePull}
+          onBranchChange={handleBranchChange}
+          onResolveConflict={handleResolveConflict}
+          onCompleteResolution={handleCompleteResolution}
+          onCancelResolution={handleCancelResolution}
+          onGetConflictInfo={handleGetConflictInfo}
+          isCommitting={isCommitting}
+          isPushing={isPushing}
+          isPulling={isPulling}
+          visible={showVersionControl}
+          onClose={toggleVersionControl}
+        />
       )}
     </PageContainer>
   );

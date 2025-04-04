@@ -3,13 +3,15 @@ import styled from 'styled-components';
 import GitStatusBar from './GitStatusBar';
 import CommitHistoryPanel from './CommitHistoryPanel';
 import BranchManager from './BranchManager';
-import { BiGitBranch, BiHistory, BiCodeCurly } from 'react-icons/bi';
-import { FileStatusInfo } from '../services/githubService';
+import ConflictResolutionPanel from './ConflictResolutionPanel';
+import { BiGitBranch, BiHistory, BiCodeCurly, BiError } from 'react-icons/bi';
+import { FileStatusInfo, ConflictInfo } from '../services/githubService';
 
 interface VersionControlPanelProps {
   repositoryName: string;
   currentBranch: string;
   modifiedFiles: FileStatusInfo[];
+  conflictingFiles?: string[];
   commitMessage: string;
   onCommitMessageChange: (message: string) => void;
   onStageFile: (filepath: string, staged: boolean) => void;
@@ -17,6 +19,10 @@ interface VersionControlPanelProps {
   onPush: () => void;
   onPull: () => void;
   onBranchChange: (branchName: string) => void;
+  onResolveConflict?: (filepath: string, resolution: 'ours' | 'theirs' | 'custom', customContent?: string) => Promise<void>;
+  onCompleteResolution?: (commitMessage: string) => Promise<void>;
+  onCancelResolution?: () => void;
+  onGetConflictInfo?: (repositoryName: string, filepath: string) => Promise<ConflictInfo | null>;
   isCommitting: boolean;
   isPushing: boolean;
   isPulling: boolean;
@@ -118,12 +124,14 @@ enum TabType {
   CHANGES = 'changes',
   HISTORY = 'history',
   BRANCHES = 'branches',
+  CONFLICTS = 'conflicts',
 }
 
 const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
   repositoryName,
   currentBranch,
   modifiedFiles,
+  conflictingFiles = [],
   commitMessage,
   onCommitMessageChange,
   onStageFile,
@@ -131,6 +139,10 @@ const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
   onPush,
   onPull,
   onBranchChange,
+  onResolveConflict,
+  onCompleteResolution,
+  onCancelResolution,
+  onGetConflictInfo,
   isCommitting,
   isPushing,
   isPulling,
@@ -138,6 +150,13 @@ const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
   onClose,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>(TabType.CHANGES);
+  
+  // If conflicts are detected and the conflicts tab isn't showing, switch to it
+  React.useEffect(() => {
+    if (conflictingFiles.length > 0 && activeTab !== TabType.CONFLICTS) {
+      setActiveTab(TabType.CONFLICTS);
+    }
+  }, [conflictingFiles.length, activeTab]);
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -171,6 +190,19 @@ const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
             repositoryName={repositoryName}
             onBranchChange={onBranchChange}
           />
+        );
+      case TabType.CONFLICTS:
+        return onResolveConflict && onCompleteResolution && onCancelResolution && onGetConflictInfo ? (
+          <ConflictResolutionPanel
+            repositoryName={repositoryName}
+            conflictingFiles={conflictingFiles}
+            onResolveConflict={onResolveConflict}
+            onCompleteResolution={onCompleteResolution}
+            onCancel={onCancelResolution}
+            onGetConflictInfo={onGetConflictInfo}
+          />
+        ) : (
+          <div>Conflict resolution is not available</div>
         );
       default:
         return null;
@@ -209,6 +241,15 @@ const VersionControlPanel: React.FC<VersionControlPanelProps> = ({
           <TabIcon><BiGitBranch /></TabIcon>
           Branches
         </Tab>
+        {conflictingFiles.length > 0 && (
+          <Tab 
+            active={activeTab === TabType.CONFLICTS} 
+            onClick={() => setActiveTab(TabType.CONFLICTS)}
+          >
+            <TabIcon><BiError /></TabIcon>
+            Conflicts ({conflictingFiles.length})
+          </Tab>
+        )}
       </TabsContainer>
       
       <TabContent>
